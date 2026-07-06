@@ -1,0 +1,193 @@
+<!--
+IM³ Framework MVP — Tilda UI v2.1
+Graph Studio performance update: chart templates, parameter-specific controls, one-chart-at-a-time visualization, PT Sans, day/night modes, Icons8 navigation.
+Compatible with AppsScript_IM3_API_v1_3_Enhanced.gs endpoints:
+metadata, module, dashboard, chartdata, repairformulas, pdf, save.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
+
+
+<link rel="stylesheet" href="./im3-style-v2.css">
+<div id="im3-app" class="im3-app" data-theme="day">
+<div id="im3LoadingScreen" class="im3-loading-screen" aria-live="polite" aria-busy="true">
+    <div class="im3-loading-box">
+      <div class="im3-loading-icon"><span></span></div>
+      <p class="im3-eyebrow">Model synchronization</p>
+      <h2>Loading IM³ model data...</h2>
+      <p id="im3LoadingStatus">Connecting...</p>
+      <div class="im3-loading-bar"><i id="im3LoadingFill"></i></div>
+      <small id="im3LoadingPercent">0%</small>
+    </div>
+  </div>
+  <aside class="im3-sidebar">
+    <div class="im3-brand">
+      <div class="im3-logo">IM³</div>
+      <div>
+        <strong>Framework MVP</strong>
+        <small>Oil & Gas Decision Model</small>
+      </div>
+    </div>
+
+    <button id="im3ThemeToggle" class="im3-theme-toggle" type="button">
+      <img id="im3ThemeIcon" src="https://img.icons8.com/fluency-systems-regular/48/moon-symbol.png" alt="Theme">
+      <span id="im3ThemeText">Night mode</span>
+    </button>
+
+    <div class="im3-progress">
+      <div class="im3-progress-top"><span>Model progress</span><strong id="im3ProgressText">0%</strong></div>
+      <div class="im3-progress-bar"><i id="im3ProgressFill"></i></div>
+    </div>
+
+    <nav id="im3Steps" class="im3-steps"></nav>
+  </aside>
+
+  <main class="im3-main">
+    <section class="im3-hero">
+      <div>
+        <p class="im3-eyebrow">Google Sheets + Tilda Analytics</p>
+        <h1 id="im3ModuleTitle">Preparing IM³ model...</h1>
+        <p id="im3ModuleDescription">Data is being synchronized from Google Sheets.</p>
+      </div>
+      <div class="im3-hero-actions">
+        <label class="im3-row-picker">
+          <span>Current record</span>
+          <select id="im3RowSelect" class="im3-select"></select>
+        </label>
+        <button id="im3RefreshBtn" class="im3-btn ghost">Refresh</button>
+      </div>
+    </section>
+
+    <section id="im3Alert" class="im3-alert hidden"></section>
+
+    <section class="im3-card im3-filter-card">
+      <div class="im3-card-header">
+        <div><p class="im3-section-label">Analysis filters</p><h2>Multi-parameter selection</h2></div>
+        <p>Select one or several parameters. Tables, dashboard and graphs will show only the selected outputs.</p>
+      </div>
+      <div class="im3-filter-grid">
+        <div class="im3-ms-field"><div class="im3-ms-title">Projects</div><div id="filterProjects" class="im3-multiselect" data-placeholder="Select projects"></div></div>
+        <div class="im3-ms-field"><div class="im3-ms-title">Assumption sets</div><div id="filterAssumptions" class="im3-multiselect" data-placeholder="Select assumptions"></div></div>
+        <div class="im3-ms-field"><div class="im3-ms-title">Risk scenarios</div><div id="filterScenarios" class="im3-multiselect" data-placeholder="Select scenarios"></div></div>
+        <div class="im3-ms-field"><div class="im3-ms-title">Years</div><div id="filterYears" class="im3-multiselect" data-placeholder="Select years"></div></div>
+        <div class="im3-ms-field"><div class="im3-ms-title">Project types</div><div id="filterProjectTypes" class="im3-multiselect" data-placeholder="Select project types"></div></div>
+        <div class="im3-ms-field"><div class="im3-ms-title">Locations</div><div id="filterLocations" class="im3-multiselect" data-placeholder="Select locations"></div></div>
+        <div class="im3-ms-field wide"><div class="im3-ms-title">Output metrics</div><div id="filterMetrics" class="im3-multiselect" data-placeholder="Select output metrics"></div></div>
+      </div>
+      <div class="im3-filter-actions">
+        <button id="im3ApplyFiltersBtn" class="im3-btn primary" type="button">Apply filters</button>
+        <button id="im3ClearFiltersBtn" class="im3-btn ghost" type="button">Clear</button>
+        <button id="im3RepairBtn" class="im3-btn soft" type="button">Check / repair formulas</button>
+      </div>
+    </section>
+
+    <section id="im3FormCard" class="im3-card im3-input-card">
+      <div class="im3-card-header">
+        <div><p class="im3-section-label">Step inputs</p><h2>Model parameters</h2></div>
+        <p>Editable fields are shown below. Formula-driven fields remain protected in Google Sheets.</p>
+      </div>
+      <form id="im3Form" class="im3-form"></form>
+      <div class="im3-form-actions">
+        <button id="im3BackBtn" type="button" class="im3-btn ghost">Back</button>
+        <button id="im3ValidateBtn" type="button" class="im3-btn ghost">Validate model</button>
+        <button id="im3SaveBtn" type="button" class="im3-btn soft">Save</button>
+        <button id="im3NextBtn" type="button" class="im3-btn primary">Save & proceed</button>
+      </div>
+    </section>
+
+    <section id="im3TableCard" class="im3-card">
+      <div class="im3-card-header">
+        <div><p class="im3-section-label">Filtered preview</p><h2>Numerical table</h2></div>
+        <p>Preview from the active module after applying selected filters.</p>
+      </div>
+      <div class="im3-table-wrap"><table id="im3Table" class="im3-table"></table></div>
+    </section>
+
+    <section class="im3-card im3-chart-builder">
+      <div class="im3-card-header">
+        <div><p class="im3-section-label">Graph Studio</p><h2>Build one graph at a time</h2></div>
+        <p>Choose a graph template, select only the required parameters, then render the visualization. The dashboard will not load all graphs at once.</p>
+      </div>
+
+      <div class="im3-graph-layout">
+        <aside class="im3-graph-menu">
+          <div class="im3-graph-menu-title">Graph templates</div>
+          <div id="im3GraphTemplateList" class="im3-graph-template-list"></div>
+        </aside>
+
+        <div class="im3-graph-workspace">
+          <div class="im3-graph-config">
+            <label class="im3-field"><span>Graph template</span><select id="chartTemplate"></select></label>
+            <label class="im3-field"><span>Indicator group</span><select id="chartMetricGroup"></select></label>
+            <label class="im3-field"><span>Chart display</span><select id="chartDisplayType">
+              <option value="auto">Automatic</option>
+              <option value="line">Line</option>
+              <option value="bar">Bar</option>
+            </select></label>
+            <button id="im3BuildChartBtn" class="im3-btn primary" type="button">Render graph</button>
+            <div class="im3-field wide"><span>Compatible metrics</span><div id="chartMetricsMulti" class="im3-metric-list"></div><div id="chartUnitHint" class="im3-unit-hint">Y-axis unit: —</div></div>
+          </div>
+
+          <div id="im3GraphHint" class="im3-graph-hint">Select a graph template to see the required parameters.</div>
+
+          <div class="im3-card chart-card im3-active-chart-card">
+            <div class="im3-active-chart-header">
+              <div>
+                <p class="im3-section-label">Active visualization</p>
+                <h3 id="advancedChartTitle">No graph rendered yet</h3>
+              </div>
+              <button id="im3ClearChartBtn" class="im3-btn ghost" type="button">Clear graph</button>
+            </div>
+            <canvas id="im3AdvancedChart" height="150"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="im3Dashboard" class="im3-dashboard">
+      <div class="im3-dashboard-header">
+        <div><p class="im3-eyebrow light">Final dashboard</p><h2 id="dashProjectName">Selected Analysis</h2><p id="dashProjectMeta">Filtered IM³ results</p></div>
+        
+        <div class="im3-dashboard-controls">
+          <label class="im3-field im3-analysis-project">
+            <span>Selected analysis</span>
+            <select id="im3AnalysisProjectSelect" class="im3-select"></select>
+          </label>
+          <button id="im3PdfBtn" class="im3-btn gold" type="button">Executive PDF Report</button>
+          <button id="im3DetailedReportBtn" class="im3-btn soft" type="button">Detailed Investment Report</button>
+          <div id="im3ReportLinks" class="im3-report-links" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="im3-kpi-grid">
+        <div class="im3-kpi"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/table.png" alt=""><span>Rows</span></div><strong id="dashRows">—</strong><small>Selected result rows</small><em class="im3-trend neutral">Live</em></div>
+        <div class="im3-kpi"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/money-bag.png" alt=""><span>Average NPV</span></div><strong id="dashNpv">—</strong><small>Filtered average</small><em id="trendNpv" class="im3-trend neutral">—</em></div>
+        <div class="im3-kpi"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/percentage.png" alt=""><span>Average IRR</span></div><strong id="dashIrr">—</strong><small>Filtered average</small><em id="trendIrr" class="im3-trend neutral">—</em></div>
+        <div class="im3-kpi"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/rating.png" alt=""><span>Average MCDA</span></div><strong id="dashMcda">—</strong><small>Strategic score</small><em id="trendMcda" class="im3-trend neutral">—</em></div>
+        <div class="im3-kpi"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/process.png" alt=""><span>System Dynamics</span></div><strong id="dashSd">—</strong><small>Dynamic score</small><em id="trendSd" class="im3-trend neutral">—</em></div>
+        <div class="im3-kpi"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/combo-chart.png" alt=""><span>Integrated Score</span></div><strong id="dashIntegrated">—</strong><small>Final score</small><em id="trendIntegrated" class="im3-trend neutral">—</em></div>
+        <div class="im3-kpi"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/project.png" alt=""><span>Best Project</span></div><strong id="dashBest">—</strong><small>By integrated score</small><em class="im3-trend neutral">Top</em></div>
+        <div class="im3-kpi decision"><div class="im3-kpi-top"><img src="https://img.icons8.com/fluency-systems-regular/48/decision.png" alt=""><span>Decision</span></div><strong id="dashDecision">—</strong><small id="dashRisk">Filtered output</small><em id="trendDecision" class="im3-trend neutral">Review</em></div>
+      </div>
+      <div class="im3-card narrative-card im3-summary-card">
+        <div class="im3-card-header">
+          <div><p class="im3-section-label">Google Sheets result viewer</p><h3 id="im3SummaryTitle">Selected output</h3></div>
+          <div class="im3-summary-controls">
+            <label class="im3-field">
+              <span>Result table</span>
+              <select id="im3SummarySelect"></select>
+            </label>
+            <button id="im3SummaryRefreshBtn" class="im3-btn ghost" type="button">Refresh result</button>
+          </div>
+        </div>
+        <div id="im3SummaryMeta" class="im3-summary-meta">Choose a result module to view dashboard indicators.</div>
+        <div id="im3SummaryCards" class="im3-summary-kpi-grid"></div>
+        <div class="im3-summary-source" id="im3SummarySource"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="./im3-app-v2.js"></script>

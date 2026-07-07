@@ -5,7 +5,7 @@ if (window.Chart) {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
 }
 
-const IM3_API_URL = "https://script.google.com/macros/s/AKfycbwk_Z0NcljL7xthwo59_zXFbxIoLobpVa3WKR9MAmlT0tz4_ONZPOWyx4llLcLrVgwl/exec";
+const IM3_API_URL = "https://script.google.com/macros/s/AKfycbzHGdbXxsQLrTjxxyXAvmKX_Ft9UmzaukNkFRQoBm094THUHEEw8sy-RKxIU5VUX9bg/exec";
 
 const ICONS8 = {
   projects: "https://img.icons8.com/fluency-systems-regular/48/project.png",
@@ -994,20 +994,24 @@ async function im3ApplyFilters() {
   await im3LoadSelectedSummary();
   if (im3State.chartBuilt) await im3BuildChart();
 }
-function im3ShowReportLink(result, label) {
+function im3AppendReportLink(result, label) {
   const box = document.getElementById("im3ReportLinks");
   if (!box || !result || !result.pdfUrl) return;
-  const safeLabel = im3Esc(label || "Open report");
-  const safeUrl = im3Esc(result.pdfUrl);
-  box.innerHTML = `<a class="im3-report-link" href="${safeUrl}" target="_blank" rel="noopener">${safeLabel}</a>`;
+  const a = document.createElement("a");
+  a.href = result.pdfUrl;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = label || "Open generated report";
+  box.appendChild(a);
 }
 
 async function im3GeneratePdf() {
   try {
+    const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
     im3ShowAlert("Generating executive PDF report in Google Drive...", "info");
-    const result = await im3Jsonp("pdf", { filters: im3FilterParam() }, 45000);
-    im3ShowAlert("Executive PDF report generated. Use the link in the dashboard header to open it.", "success");
-    im3ShowReportLink(result, "Open Executive PDF Report");
+    const result = await im3Jsonp("pdf", { filters: im3FilterParam(), projectId }, 60000);
+    im3ShowAlert("Executive PDF generated. Use the report link below to open it.", "success");
+    im3AppendReportLink(result, "Open Executive PDF Report");
   } catch(err) {
     im3ShowAlert("PDF generation error: " + err, "error");
   }
@@ -1015,13 +1019,11 @@ async function im3GeneratePdf() {
 
 async function im3GenerateDetailedReport() {
   try {
+    const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
     im3ShowAlert("Generating detailed investment report in Google Drive...", "info");
-    const projectId = document.getElementById("im3AnalysisProjectSelect")?.value || "";
-    const params = { filters: im3FilterParam() };
-    if (projectId) params.projectId = projectId;
-    const result = await im3Jsonp("detailedreport", params, 90000);
-    im3ShowAlert("Detailed investment report generated. Use the link in the dashboard header to open it.", "success");
-    im3ShowReportLink(result, "Open Detailed Investment Report");
+    const result = await im3Jsonp("detailedreport", { filters: im3FilterParam(), projectId }, 90000);
+    im3ShowAlert("Detailed investment report generated. Use the report link below to open it.", "success");
+    im3AppendReportLink(result, "Open Detailed Investment Report");
   } catch(err) {
     im3ShowAlert("Detailed report error: " + err, "error");
   }
@@ -1033,8 +1035,8 @@ document.getElementById("im3SaveBtn").addEventListener("click",im3SaveCurrent);
 document.getElementById("im3NextBtn").addEventListener("click",async()=>{const ok=await im3SaveCurrent(); if(ok) im3LoadModuleByIndex(im3State.moduleIndex+1);});
 document.getElementById("im3BackBtn").addEventListener("click",()=>im3LoadModuleByIndex(im3State.moduleIndex-1));
 document.getElementById("im3PdfBtn").addEventListener("click",im3GeneratePdf);
-const im3DetailedReportBtn = document.getElementById("im3DetailedReportBtn");
-if (im3DetailedReportBtn) im3DetailedReportBtn.addEventListener("click", im3GenerateDetailedReport);
+const im3DetailedBtn = document.getElementById("im3DetailedReportBtn");
+if (im3DetailedBtn) im3DetailedBtn.addEventListener("click", im3GenerateDetailedReport);
 document.getElementById("im3ApplyFiltersBtn").addEventListener("click",im3ApplyFilters);
 document.getElementById("im3ClearFiltersBtn").addEventListener("click",im3ClearFilters);
 document.getElementById("im3RepairBtn").addEventListener("click",im3RepairFormulas);
@@ -1693,3 +1695,116 @@ document.addEventListener("DOMContentLoaded", () => {
   const validateBtn = document.getElementById("im3ValidateBtn");
   if (validateBtn) validateBtn.addEventListener("click", im3ValidateCurrent);
 });
+
+/* ============================================================
+ * IM³ Framework MVP — Summary Dashboard Frontend Repair v2.8
+ * Purpose:
+ * - Makes im3-summary-card independent from the obsolete im3DashboardTable ID.
+ * - Uses action=summarydata and renders cards into im3SummaryCards.
+ * - Adds graceful fallback using dashboard KPIs if summarydata is unavailable.
+ * - Rebinds the Refresh result button after earlier function overrides.
+ * ============================================================ */
+
+function im3SummaryFallbackCardsV28(summary, rows) {
+  const first = (rows || [])[0] || {};
+  return {
+    title: "Dashboard summary fallback",
+    note: "Summary endpoint was not available, so dashboard KPIs are shown instead.",
+    cards: [
+      { label:"Rows", value:(rows || []).length || summary.count || summary.rows || 0, format:"plain" },
+      { label:"Average NPV", value:summary.avgNPV ?? summary.avgNpv ?? first.NPV_USD, format:"money" },
+      { label:"Average IRR", value:summary.avgIRR ?? summary.avgIrr ?? first.IRR, format:"percent" },
+      { label:"MCDA Score", value:summary.avgMCDA ?? summary.avgMcda ?? first.MCDA_Score, format:"score" },
+      { label:"System Dynamics Score", value:summary.avgSD ?? summary.avgSystemDynamics ?? first.System_Dynamics_Score, format:"score" },
+      { label:"Integrated Score", value:summary.avgIntegratedScore ?? summary.avgIntegrated ?? first.Integrated_Score, format:"score" },
+      { label:"Decision", value:summary.decision || first.Final_Decision || first.Decision_Label || "Review", format:"plain" },
+      { label:"Risk", value:summary.risk || summary.riskLevel || first.Scenario_Risk_Class || first.Risk_Label || "Filtered output", format:"plain" }
+    ]
+  };
+}
+
+function im3NormalizeSummaryCardsV28(data) {
+  const cards = Array.isArray(data?.cards) ? data.cards : [];
+  return cards.map(c => ({
+    label: c.label || c.name || c.metric || "Indicator",
+    value: c.value,
+    format: c.format || "plain",
+    source: c.source || ""
+  })).filter(c => c.label);
+}
+
+function im3RenderSummaryCards(data) {
+  const box = document.getElementById("im3SummaryCards");
+  const source = document.getElementById("im3SummarySource");
+  if (!box) return;
+  const cards = im3NormalizeSummaryCardsV28(data);
+  if (!cards.length) {
+    box.innerHTML = `<div class="im3-readonly">No indicators available for this selection. Check whether the selected project has data in the chosen module.</div>`;
+    if (source) source.textContent = "";
+    return;
+  }
+  box.innerHTML = cards.map((c, idx) => `
+    <div class="im3-summary-kpi" data-kpi-index="${idx}">
+      <div class="im3-summary-kpi-head">
+        <span>${im3Esc(c.label)}</span>
+        <i aria-hidden="true"></i>
+      </div>
+      <strong>${im3Esc(im3FormatCardValue(c.value, c.format))}</strong>
+      <small>${im3Esc(im3ProfessionalKpiSubtitle ? im3ProfessionalKpiSubtitle(c.label, "Dashboard indicator") : (c.source || "Dashboard indicator"))}</small>
+    </div>`).join("");
+  if (source) {
+    const sourceText = [data?.sourceSheet, data?.sourceRange].filter(Boolean).join(" — ");
+    source.textContent = im3CleanVisualText ? im3CleanVisualText(sourceText) : sourceText;
+  }
+}
+
+async function im3LoadSelectedSummary() {
+  const select = document.getElementById("im3SummarySelect");
+  const meta = document.getElementById("im3SummaryMeta");
+  const title = document.getElementById("im3SummaryTitle");
+  const box = document.getElementById("im3SummaryCards");
+  if (!select || !box) return;
+
+  const viewId = select.value || im3State.summaryView || (IM3_SUMMARY_VIEWS[0] && IM3_SUMMARY_VIEWS[0].id) || "production_summary";
+  im3State.summaryView = viewId;
+  const view = IM3_SUMMARY_VIEWS.find(v => v.id === viewId) || { id:viewId, title:im3PrettyLabel(viewId) };
+  if (title) title.textContent = view.title;
+  if (meta) meta.textContent = "Loading selected dashboard indicators...";
+
+  try {
+    const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
+    const data = await im3Jsonp("summarydata", { view:viewId, filters:im3FilterParam(), projectId }, 45000);
+    im3RenderSummaryCards(data);
+    if (meta) {
+      const cleanNote = im3CleanVisualText ? im3CleanVisualText(data.note || data.message || data.title || view.title) : (data.note || data.message || data.title || view.title);
+      meta.textContent = cleanNote || "Dashboard indicators updated for the selected project.";
+    }
+    if (typeof im3AttachImageFallbacks === "function") im3AttachImageFallbacks();
+  } catch (err) {
+    try {
+      const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
+      const dash = await im3Jsonp("dashboard", { filters:im3FilterParam(), projectId }, 35000);
+      const fallback = im3SummaryFallbackCardsV28(dash.summary || {}, dash.rows || []);
+      im3RenderSummaryCards(fallback);
+      if (meta) meta.textContent = "Summary endpoint unavailable; showing dashboard KPI fallback. API detail: " + err;
+    } catch (dashErr) {
+      im3RenderSummaryCards({ cards:[] });
+      if (meta) meta.textContent = "Could not load summary dashboard data: " + err;
+    }
+  }
+}
+
+function im3RebindSummaryRefreshV28() {
+  const btn = document.getElementById("im3SummaryRefreshBtn");
+  if (!btn || btn.dataset.summaryRepairBound === "1") return;
+  const clone = btn.cloneNode(true);
+  clone.dataset.summaryRepairBound = "1";
+  btn.parentNode.replaceChild(clone, btn);
+  clone.addEventListener("click", im3LoadSelectedSummary);
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  im3RebindSummaryRefreshV28();
+});
+setTimeout(im3RebindSummaryRefreshV28, 1200);
+/* ===== end Summary Dashboard Frontend Repair v2.8 ===== */

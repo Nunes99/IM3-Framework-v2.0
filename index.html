@@ -167,6 +167,18 @@ metadata, module, dashboard, chartdata, repairformulas, pdf, save.
           </label>
           <button id="im3PdfBtn" class="im3-btn gold" type="button">Executive PDF Report</button>
           <button id="im3DetailedReportBtn" class="im3-btn soft" type="button">Detailed Investment Report</button>
+          <button id="im3ClearReportsBtn" class="im3-btn ghost" type="button">Clear reports</button>
+          <div id="im3ReportProgress" class="im3-report-progress hidden" aria-live="polite">
+            <div class="im3-report-progress-top">
+              <strong id="im3ReportProgressTitle">Report generation</strong>
+              <span id="im3ReportProgressPercent">0%</span>
+            </div>
+            <div class="im3-report-progress-bar"><i id="im3ReportProgressFill"></i></div>
+            <div class="im3-report-progress-meta">
+              <span id="im3ReportProgressStatus">Waiting...</span>
+              <span id="im3ReportProgressTime">Elapsed: 0s</span>
+            </div>
+          </div>
           <div id="im3ReportLinks" class="im3-report-links" aria-live="polite"></div>
         </div>
       </div>

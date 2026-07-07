@@ -5,7 +5,7 @@ if (window.Chart) {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
 }
 
-const IM3_API_URL = "https://script.google.com/macros/s/AKfycbzG8iqTaPXbCXw8j9RaxvRHtaih5cOjf6X65k0Y2SvzgFT506qFp_PTOkq-o7hlixpN/exec";
+const IM3_API_URL = "https://script.google.com/macros/s/AKfycbyQ0NgueQkrWiOKuNLWVQVxhBRE77Qaif5b-EKAfWIo6kfRHJ1OhFZgdDNdDb8mBZjH/exec";
 
 const ICONS8 = {
   projects: "https://img.icons8.com/fluency-systems-regular/48/project.png",
@@ -994,6 +994,93 @@ async function im3ApplyFilters() {
   await im3LoadSelectedSummary();
   if (im3State.chartBuilt) await im3BuildChart();
 }
+let im3ReportProgressTimer = null;
+
+function im3ReportProgressElements() {
+  return {
+    box: document.getElementById("im3ReportProgress"),
+    title: document.getElementById("im3ReportProgressTitle"),
+    percent: document.getElementById("im3ReportProgressPercent"),
+    fill: document.getElementById("im3ReportProgressFill"),
+    status: document.getElementById("im3ReportProgressStatus"),
+    time: document.getElementById("im3ReportProgressTime")
+  };
+}
+
+function im3SetReportButtonsBusy(isBusy) {
+  ["im3PdfBtn", "im3DetailedReportBtn", "im3ClearReportsBtn"].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !!isBusy;
+  });
+}
+
+function im3StartReportProgress(typeLabel, estimateSeconds) {
+  const el = im3ReportProgressElements();
+  const started = Date.now();
+  const estimate = Math.max(20, Number(estimateSeconds) || 60);
+  if (im3ReportProgressTimer) clearInterval(im3ReportProgressTimer);
+  if (el.box) el.box.classList.remove("hidden");
+  if (el.title) el.title.textContent = typeLabel || "Report generation";
+  im3SetReportButtonsBusy(true);
+
+  const update = () => {
+    const elapsed = Math.max(0, Math.round((Date.now() - started) / 1000));
+    const ratio = Math.min(0.92, elapsed / estimate);
+    const pct = Math.max(8, Math.round(ratio * 100));
+    if (el.percent) el.percent.textContent = pct + "%";
+    if (el.fill) el.fill.style.width = pct + "%";
+    if (el.status) {
+      if (elapsed < 4) el.status.textContent = "Preparing report data...";
+      else if (elapsed < Math.round(estimate * 0.45)) el.status.textContent = "Building PDF sections and tables...";
+      else if (elapsed < Math.round(estimate * 0.75)) el.status.textContent = "Rendering document in Google Drive...";
+      else el.status.textContent = "Finalizing file and link...";
+    }
+    if (el.time) {
+      const remaining = Math.max(0, estimate - elapsed);
+      el.time.textContent = "Elapsed: " + elapsed + "s | Typical estimate: ~" + estimate + "s | Remaining approx.: " + remaining + "s";
+    }
+  };
+  update();
+  im3ReportProgressTimer = setInterval(update, 1000);
+}
+
+function im3FinishReportProgress(message) {
+  const el = im3ReportProgressElements();
+  if (im3ReportProgressTimer) clearInterval(im3ReportProgressTimer);
+  im3ReportProgressTimer = null;
+  if (el.percent) el.percent.textContent = "100%";
+  if (el.fill) el.fill.style.width = "100%";
+  if (el.status) el.status.textContent = message || "Report generated successfully.";
+  if (el.time) el.time.textContent = "Completed.";
+  im3SetReportButtonsBusy(false);
+}
+
+function im3FailReportProgress(message) {
+  const el = im3ReportProgressElements();
+  if (im3ReportProgressTimer) clearInterval(im3ReportProgressTimer);
+  im3ReportProgressTimer = null;
+  if (el.percent) el.percent.textContent = "Error";
+  if (el.fill) el.fill.style.width = "100%";
+  if (el.status) el.status.textContent = message || "Report generation failed.";
+  if (el.time) el.time.textContent = "Check Apps Script deployment, permissions or execution logs.";
+  im3SetReportButtonsBusy(false);
+}
+
+function im3ClearGeneratedReports() {
+  const box = document.getElementById("im3ReportLinks");
+  if (box) box.innerHTML = "";
+  const el = im3ReportProgressElements();
+  if (im3ReportProgressTimer) clearInterval(im3ReportProgressTimer);
+  im3ReportProgressTimer = null;
+  if (el.box) el.box.classList.add("hidden");
+  if (el.percent) el.percent.textContent = "0%";
+  if (el.fill) el.fill.style.width = "0%";
+  if (el.status) el.status.textContent = "Waiting...";
+  if (el.time) el.time.textContent = "Elapsed: 0s";
+  im3SetReportButtonsBusy(false);
+  im3ShowAlert("Generated report links cleared. You can generate a fresh version now.", "info");
+}
+
 function im3AppendReportLink(result, label) {
   const box = document.getElementById("im3ReportLinks");
   if (!box || !result || !result.pdfUrl) return;
@@ -1019,11 +1106,14 @@ async function im3GeneratePdf() {
   try {
     const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
     const language = im3SelectedReportLanguage();
+    im3StartReportProgress("Executive PDF report — " + im3ReportLanguageLabel(language), 45);
     im3ShowAlert("Generating executive PDF report (" + im3ReportLanguageLabel(language) + ") in Google Drive...", "info");
-    const result = await im3Jsonp("pdf", { filters: im3FilterParam(), projectId, language }, 60000);
+    const result = await im3Jsonp("pdf", { filters: im3FilterParam(), projectId, language }, 90000);
+    im3FinishReportProgress("Executive PDF generated successfully.");
     im3ShowAlert("Executive PDF generated. Use the report link below to open it.", "success");
     im3AppendReportLink(result, "Open Executive PDF Report — " + im3ReportLanguageLabel(language));
   } catch(err) {
+    im3FailReportProgress("Executive PDF generation failed: " + err);
     im3ShowAlert("PDF generation error: " + err, "error");
   }
 }
@@ -1032,11 +1122,14 @@ async function im3GenerateDetailedReport() {
   try {
     const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
     const language = im3SelectedReportLanguage();
+    im3StartReportProgress("Detailed investment report — " + im3ReportLanguageLabel(language), 90);
     im3ShowAlert("Generating detailed investment report (" + im3ReportLanguageLabel(language) + ") in Google Drive...", "info");
-    const result = await im3Jsonp("detailedreport", { filters: im3FilterParam(), projectId, language }, 90000);
+    const result = await im3Jsonp("detailedreport", { filters: im3FilterParam(), projectId, language }, 150000);
+    im3FinishReportProgress("Detailed investment report generated successfully.");
     im3ShowAlert("Detailed investment report generated. Use the report link below to open it.", "success");
     im3AppendReportLink(result, "Open Detailed Investment Report — " + im3ReportLanguageLabel(language));
   } catch(err) {
+    im3FailReportProgress("Detailed report generation failed: " + err);
     im3ShowAlert("Detailed report error: " + err, "error");
   }
 }
@@ -1049,6 +1142,8 @@ document.getElementById("im3BackBtn").addEventListener("click",()=>im3LoadModule
 document.getElementById("im3PdfBtn").addEventListener("click",im3GeneratePdf);
 const im3DetailedBtn = document.getElementById("im3DetailedReportBtn");
 if (im3DetailedBtn) im3DetailedBtn.addEventListener("click", im3GenerateDetailedReport);
+const im3ClearReportsBtn = document.getElementById("im3ClearReportsBtn");
+if (im3ClearReportsBtn) im3ClearReportsBtn.addEventListener("click", im3ClearGeneratedReports);
 document.getElementById("im3ApplyFiltersBtn").addEventListener("click",im3ApplyFilters);
 document.getElementById("im3ClearFiltersBtn").addEventListener("click",im3ClearFilters);
 document.getElementById("im3RepairBtn").addEventListener("click",im3RepairFormulas);

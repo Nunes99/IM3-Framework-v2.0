@@ -1966,3 +1966,60 @@ html:has(#im3-app), body:has(#im3-app){
   }
 }
 /* --- end v4.0 multilingual report selector --- */
+
+/* --- v5.1 PDF generation progress UX --- */
+.im3-report-progress{
+  width:100%;
+  min-width:min(520px,100%);
+  border:1px solid rgba(255,255,255,.24);
+  background:rgba(255,255,255,.10);
+  color:#fff;
+  border-radius:10px;
+  padding:12px;
+  margin-top:8px;
+}
+.im3-report-progress.hidden{display:none!important}
+.im3-report-progress-top{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  font-size:13px;
+  margin-bottom:8px;
+}
+.im3-report-progress-top strong{font-size:13px;color:#fff}
+.im3-report-progress-bar{
+  height:8px;
+  border-radius:999px;
+  background:rgba(255,255,255,.22);
+  overflow:hidden;
+}
+.im3-report-progress-bar i{
+  display:block;
+  height:100%;
+  width:0%;
+  border-radius:inherit;
+  background:var(--im3-gold);
+  transition:width .35s ease;
+}
+.im3-report-progress-meta{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:8px;
+  font-size:12px;
+  color:rgba(255,255,255,.86);
+}
+.im3-dashboard-controls #im3ClearReportsBtn{
+  background:rgba(255,255,255,.10);
+  color:#fff;
+  border:1px solid rgba(255,255,255,.28);
+}
+.im3-dashboard-controls #im3ClearReportsBtn:hover{
+  background:rgba(255,255,255,.18);
+}
+@media(max-width:860px){
+  .im3-report-progress{min-width:0}
+  .im3-report-progress-meta{flex-direction:column;gap:4px}
+}
+/* --- end v5.1 PDF generation progress UX --- */

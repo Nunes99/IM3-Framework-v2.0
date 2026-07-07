@@ -5,7 +5,7 @@ if (window.Chart) {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
 }
 
-const IM3_API_URL = "https://script.google.com/macros/s/AKfycbz2xA3a505SxitlOZsNIEPzkOkXPXspRdDLVjvYmq69raYdn0kktvTGdpv46_z3yWpz/exec";
+const IM3_API_URL = "https://script.google.com/macros/s/AKfycbynpVCdap7hj2GrvDL4gzC4uLRT8MHIlnWXJbkXAsPWes2q6wCsxpBPwnPdsDKl95pU/exec";
 
 const ICONS8 = {
   projects: "https://img.icons8.com/fluency-systems-regular/48/project.png",
@@ -1005,13 +1005,24 @@ function im3AppendReportLink(result, label) {
   box.appendChild(a);
 }
 
+function im3SelectedReportLanguage() {
+  const el = document.getElementById("im3ReportLanguage");
+  return el ? (el.value || "en") : "en";
+}
+
+function im3ReportLanguageLabel(code) {
+  const labels = { en:"English", pt:"Português", ru:"Русский", fr:"Français", es:"Español" };
+  return labels[code] || labels.en;
+}
+
 async function im3GeneratePdf() {
   try {
     const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
-    im3ShowAlert("Generating executive PDF report in Google Drive...", "info");
-    const result = await im3Jsonp("pdf", { filters: im3FilterParam(), projectId }, 60000);
+    const language = im3SelectedReportLanguage();
+    im3ShowAlert("Generating executive PDF report (" + im3ReportLanguageLabel(language) + ") in Google Drive...", "info");
+    const result = await im3Jsonp("pdf", { filters: im3FilterParam(), projectId, language }, 60000);
     im3ShowAlert("Executive PDF generated. Use the report link below to open it.", "success");
-    im3AppendReportLink(result, "Open Executive PDF Report");
+    im3AppendReportLink(result, "Open Executive PDF Report — " + im3ReportLanguageLabel(language));
   } catch(err) {
     im3ShowAlert("PDF generation error: " + err, "error");
   }
@@ -1020,10 +1031,11 @@ async function im3GeneratePdf() {
 async function im3GenerateDetailedReport() {
   try {
     const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
-    im3ShowAlert("Generating detailed investment report in Google Drive...", "info");
-    const result = await im3Jsonp("detailedreport", { filters: im3FilterParam(), projectId }, 90000);
+    const language = im3SelectedReportLanguage();
+    im3ShowAlert("Generating detailed investment report (" + im3ReportLanguageLabel(language) + ") in Google Drive...", "info");
+    const result = await im3Jsonp("detailedreport", { filters: im3FilterParam(), projectId, language }, 90000);
     im3ShowAlert("Detailed investment report generated. Use the report link below to open it.", "success");
-    im3AppendReportLink(result, "Open Detailed Investment Report");
+    im3AppendReportLink(result, "Open Detailed Investment Report — " + im3ReportLanguageLabel(language));
   } catch(err) {
     im3ShowAlert("Detailed report error: " + err, "error");
   }

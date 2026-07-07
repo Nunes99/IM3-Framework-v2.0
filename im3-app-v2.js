@@ -5,7 +5,7 @@ if (window.Chart) {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
 }
 
-const IM3_API_URL = "https://script.google.com/macros/s/AKfycbynpVCdap7hj2GrvDL4gzC4uLRT8MHIlnWXJbkXAsPWes2q6wCsxpBPwnPdsDKl95pU/exec";
+const IM3_API_URL = "https://script.google.com/macros/s/AKfycbwmWsZKQPyPbQdUA80yUgJtzuo7_hhCaboWVmCKHptzNgXXWb8hsqIXqK0fYTm76fIn/exec";
 
 const ICONS8 = {
   projects: "https://img.icons8.com/fluency-systems-regular/48/project.png",
@@ -2189,3 +2189,189 @@ function im3RenderAdvancedScatterV30(data) {
 }
 
 /* ===== end Graph Studio Advanced Analytics v3.0 ===== */
+
+/* ============================================================
+ * IM³ Framework MVP — v4.1 Graph Studio Frontend Fix
+ * Purpose:
+ * - Uses action=timeseries reliably.
+ * - Differentiates every metric/project series with a unique color.
+ * - Handles multi-metric and multi-project comparisons cleanly.
+ * ============================================================ */
+
+function im3ChartColors() {
+  return [
+    "#193A64", "#E76F51", "#2A9D8F", "#F4A261", "#6A4C93", "#118AB2",
+    "#EF476F", "#06D6A0", "#FFD166", "#073B4C", "#8D99AE", "#BC6C25",
+    "#386641", "#7209B7", "#3A86FF", "#FB5607", "#8338EC", "#FF006E",
+    "#457B9D", "#A7C957", "#F77F00", "#003049", "#9B5DE5", "#00BBF9"
+  ];
+}
+
+function im3StableColorForSeriesV41(label, index) {
+  const colors = im3ChartColors();
+  const raw = String(label || "series");
+  let hash = 0;
+  for (let i = 0; i < raw.length; i++) hash = ((hash << 5) - hash) + raw.charCodeAt(i);
+  const idx = Math.abs(hash + (index || 0)) % colors.length;
+  return colors[idx];
+}
+
+function im3SelectedMetricIdsV41() {
+  const selected = Array.from(document.querySelectorAll('#chartMetricsMulti input[type="checkbox"]:checked')).map(i => i.value);
+  if (selected.length) return selected;
+  const legacy = document.getElementById("chartMetric");
+  return legacy && legacy.value ? [legacy.value] : [];
+}
+
+function im3ValidateMetricSelectionV20() {
+  const selected = im3SelectedMetricIdsV41().map(im3MetricByIdV20).filter(Boolean);
+  const btn = document.getElementById("im3BuildChartBtn");
+  const unitEl = document.getElementById("chartUnitHint");
+  if (!selected.length) {
+    if (btn) btn.disabled = true;
+    if (unitEl) unitEl.textContent = "Select at least one metric.";
+    return false;
+  }
+  const compare = selected[0].allowedCompareGroup;
+  const incompatible = selected.some(m => m.allowedCompareGroup !== compare);
+  if (btn) btn.disabled = incompatible;
+  const units = [...new Set(selected.map(m => m.fallbackUnit || m.unit || "value"))];
+  if (unitEl) {
+    unitEl.textContent = incompatible
+      ? "Incompatible units. Select metrics from the same unit group."
+      : `Y-axis unit: ${units.join(" / ")} | ${selected.length} metric(s) selected`;
+  }
+  return !incompatible;
+}
+
+async function im3BuildChart() {
+  try {
+    const templates = im3State.metadata.graphTemplates || [];
+    const template = templates.find(t => t.id === document.getElementById("chartTemplate")?.value) || {};
+
+    if (typeof im3IsAdvancedTemplateV30 === "function" && im3IsAdvancedTemplateV30(template)) {
+      document.getElementById("advancedChartTitle").textContent = template.title || "Advanced IM³ chart";
+      const projectId = typeof im3SelectedAnalysisProjectId === "function" ? im3SelectedAnalysisProjectId() : "";
+      const data = await im3Jsonp("advancedchartdata", { templateId: template.id, filters: im3FilterParam(), projectId }, 60000);
+      im3RenderAdvancedChartV30(data);
+      im3State.chartBuilt = true;
+      return;
+    }
+
+    if (!im3ValidateMetricSelectionV20()) {
+      im3ShowAlert("Select compatible metrics before rendering the graph.", "error");
+      return;
+    }
+
+    const metrics = im3SelectedMetricIdsV41();
+    const metricLabels = metrics.map(id => im3MetricByIdV20(id)?.label || id);
+    const displayType = document.getElementById("chartDisplayType")?.value || "auto";
+    const chartType = displayType === "auto" ? (template.defaultChart || "line") : displayType;
+    const groupBy = document.getElementById("chartGroupBy")?.value || "Project_Name";
+
+    const title = `${template.title || "Time Series"} — ${metricLabels.join(", ")}`;
+    const titleEl = document.getElementById("advancedChartTitle");
+    if (titleEl) titleEl.textContent = title;
+
+    const data = await im3Jsonp("timeseries", {
+      filters: im3FilterParam(),
+      metrics: im3Encode(metrics),
+      groupBy: groupBy || "Project_Name"
+    }, 60000);
+
+    if (!data.series || !data.series.some(s => s.data && s.data.length)) {
+      im3ShowAlert("No data found for selected metrics/projects and filters.", "info");
+      im3ClearActiveChart();
+      return;
+    }
+
+    im3State.chartBuilt = true;
+    im3RenderTimeSeriesV20(data, chartType);
+  } catch (err) {
+    im3ShowAlert("Chart error: " + err, "error");
+    console.error("Graph Studio error", err);
+  }
+}
+
+function im3RenderTimeSeriesV20(data, chartType) {
+  const allPoints = (data.series || []).flatMap(s => s.data || []);
+  const years = (data.years && data.years.length)
+    ? data.years.map(String).sort((a,b) => Number(a) - Number(b))
+    : [...new Set(allPoints.map(p => String(p.year)))].sort((a,b) => Number(a) - Number(b));
+
+  const datasets = [];
+  let colorIndex = 0;
+
+  (data.series || []).forEach(s => {
+    const names = [...new Set((s.data || []).map(p => String(p.series || s.label || s.metricId || "Series")))];
+    names.forEach(name => {
+      const label = names.length > 1 ? `${s.label || s.metricId} — ${im3CleanOptionLabel(name)}` : (s.label || s.metricId || im3CleanOptionLabel(name));
+      const color = im3StableColorForSeriesV41(label, colorIndex++);
+      datasets.push({
+        label,
+        data: years.map(y => {
+          const p = (s.data || []).find(d => String(d.year) === String(y) && String(d.series || s.label || s.metricId) === String(name));
+          return p ? Number(p.value) : null;
+        }),
+        borderWidth: chartType === "bar" ? 1.6 : 2.8,
+        tension: .25,
+        fill: false,
+        spanGaps: true,
+        borderColor: color,
+        backgroundColor: chartType === "bar" ? color : color,
+        pointBackgroundColor: color,
+        pointBorderColor: color,
+        pointRadius: chartType === "line" ? 3 : 0,
+        pointHoverRadius: 5,
+        borderRadius: chartType === "bar" ? 6 : 0
+      });
+    });
+  });
+
+  im3DestroyActiveChart();
+  const canvas = document.getElementById("im3AdvancedChart");
+  if (!canvas) return;
+
+  const finalType = chartType === "bar" ? "bar" : "line";
+  im3State.charts.advanced = new Chart(canvas, {
+    type: finalType,
+    data: { labels: years, datasets },
+    options: {
+      responsive:true,
+      maintainAspectRatio:false,
+      interaction:{ mode:"nearest", intersect:false },
+      plugins:{
+        legend:{
+          position:"bottom",
+          labels:{ usePointStyle:true, boxWidth:10, padding:14 }
+        },
+        tooltip:{
+          mode:"nearest",
+          intersect:false,
+          callbacks:{
+            label: ctx => `${ctx.dataset.label}: ${im3FormatChartValueV41(ctx.parsed.y, data.yUnit)}`
+          }
+        }
+      },
+      scales:{
+        x:{ title:{ display:true, text:"Year" }, grid:{ display:false } },
+        y:{ title:{ display:true, text:data.yUnit || "Value" }, grid:{ color:"rgba(25,58,100,.10)" } }
+      }
+    }
+  });
+
+  const hint = document.getElementById("im3GraphHint");
+  if (hint) {
+    hint.textContent = `${datasets.length} series rendered. Each metric/project combination has a distinct color. Unit: ${data.yUnit || "Value"}.`;
+  }
+}
+
+function im3FormatChartValueV41(value, unit) {
+  const n = Number(value);
+  if (isNaN(n)) return String(value ?? "—");
+  const u = String(unit || "");
+  if (/usd/i.test(u)) return "$" + (Math.abs(n) >= 1000000 ? (n/1000000).toFixed(2) + "M" : n.toLocaleString(undefined, { maximumFractionDigits:2 }));
+  if (u === "%" || /percent/i.test(u)) return (Math.abs(n) <= 1 ? n * 100 : n).toFixed(2) + "%";
+  if (Math.abs(n) >= 1000000) return (n/1000000).toFixed(2) + "M";
+  return n.toLocaleString(undefined, { maximumFractionDigits:4 });
+}

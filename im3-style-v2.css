@@ -1925,42 +1925,27 @@ html:has(#im3-app), body:has(#im3-app){
 @media(max-width:860px){.im3-metric-list{grid-template-columns:1fr}}
 
 
-/* --- v2.1 report controls update --- */
-.im3-dashboard-controls{
-  display:flex;
-  align-items:flex-end;
-  gap:12px;
-  flex-wrap:wrap;
-}
+/* --- v2.1 report link UX --- */
 .im3-report-links{
-  flex:1 1 100%;
-  min-height:20px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:8px;
 }
-.im3-report-link{
+.im3-report-links a{
   display:inline-flex;
   align-items:center;
-  justify-content:center;
   min-height:34px;
-  padding:7px 12px;
+  padding:0 12px;
   border-radius:7px;
   background:rgba(255,255,255,.14);
   color:#fff;
-  border:1px solid rgba(255,255,255,.25);
+  border:1px solid rgba(255,255,255,.28);
+  text-decoration:none;
   font-size:13px;
   font-weight:700;
-  text-decoration:none;
 }
-.im3-report-link:hover{
-  background:rgba(255,255,255,.24);
+.im3-report-links a:hover{
+  background:rgba(255,255,255,.22);
 }
-#im3DetailedReportBtn{
-  width:240px;
-  min-width:240px;
-  flex-basis:240px;
-}
-@media(max-width:860px){
-  .im3-dashboard-controls{width:100%;align-items:stretch;}
-  #im3DetailedReportBtn{width:100%;min-width:0;flex-basis:auto;}
-  .im3-report-link{width:100%;}
-}
-/* --- end v2.1 report controls update --- */
+/* --- end v2.1 report link UX --- */

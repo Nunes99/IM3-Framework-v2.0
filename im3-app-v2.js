@@ -5,7 +5,7 @@ if (window.Chart) {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
 }
 
-const IM3_API_URL = "https://script.google.com/macros/s/AKfycbx4HKM8A1AZxkZAhCd2l-WrptWSZ59WduUwyxtBsExGY0r8RJDYbEJwVMaRhDWRcT6Y/exec";
+const IM3_API_URL = "https://script.google.com/macros/s/AKfycbw0XqnS9CtYLPc2SbkDkfPOh_b6hhBzb2Q5ieeR8-hS19lQZw_yQXgGW-RaryZ7hkqN/exec";
 
 const ICONS8 = {
   projects: "https://img.icons8.com/fluency-systems-regular/48/project.png",
@@ -1808,3 +1808,372 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 setTimeout(im3RebindSummaryRefreshV28, 1200);
 /* ===== end Summary Dashboard Frontend Repair v2.8 ===== */
+
+/* ===== v2.7 robust summary dashboard fallback =====
+   Purpose: if the deployed Apps Script still does not expose action=summarydata,
+   the dashboard summary card will fall back to action=dashboard instead of staying empty.
+*/
+function im3BuildFallbackSummaryCardsFromDashboard(viewId, dashboardData) {
+  const summary = dashboardData.summary || {};
+  const rows = dashboardData.rows || [];
+  const first = dashboardData.first || rows[0] || {};
+  const cards = [];
+  const add = (label, value, format) => {
+    if (value !== undefined && value !== null && value !== "") cards.push({ label, value, format: format || "number" });
+  };
+
+  if (viewId === "production_summary") {
+    add("Rows", dashboardData.totalRowsAfterFilter || rows.length || summary.count, "integer");
+    add("Best Project", (summary.bestProject && (summary.bestProject.Project_Name || summary.bestProject.Project_ID)) || first.Project_Name || first.Project_ID || "—", "text");
+    add("Integrated Score", summary.avgIntegratedScore || first.Integrated_Score, "number");
+    add("System Dynamics", summary.avgSD || first.System_Dynamics_Score, "number");
+  } else if (viewId === "dcf_summary" || viewId === "dcf_results_summary") {
+    add("Average NPV", summary.avgNPV || first.NPV_USD, "usd");
+    add("Average IRR", summary.avgIRR || first.IRR, "percent");
+    add("Payback Years", first.Payback_Years || first.Payback_Display, "number");
+    add("DCF Score", first.DCF_Score, "number");
+  } else if (viewId === "mcda_summary") {
+    add("Average MCDA", summary.avgMCDA || first.MCDA_Score, "number");
+    add("MCDA Rank", first.MCDA_Rank, "integer");
+    add("Integrated Score", summary.avgIntegratedScore || first.Integrated_Score, "number");
+  } else if (viewId === "system_dynamics_summary") {
+    add("System Dynamics", summary.avgSD || first.System_Dynamics_Score, "number");
+    add("Integrated Score", summary.avgIntegratedScore || first.Integrated_Score, "number");
+    add("Market Risk", first.Market_Risk_Index || first.Risk_Label || first.Scenario_Risk_Class, "text");
+  } else if (viewId === "monte_carlo_summary") {
+    add("Monte Carlo Mean NPV", first.Monte_Carlo_Mean_NPV, "usd");
+    add("Probability Positive NPV", first.Probability_Positive_NPV || first.Monte_Carlo_Display, "percent");
+    add("Rows", dashboardData.totalRowsAfterFilter || rows.length || summary.count, "integer");
+  } else {
+    add("Rows", dashboardData.totalRowsAfterFilter || rows.length || summary.count, "integer");
+    add("Average NPV", summary.avgNPV || first.NPV_USD, "usd");
+    add("Average IRR", summary.avgIRR || first.IRR, "percent");
+    add("Integrated Score", summary.avgIntegratedScore || first.Integrated_Score, "number");
+  }
+
+  if (!cards.length) {
+    add("Rows", dashboardData.totalRowsAfterFilter || rows.length || 0, "integer");
+    add("Project", first.Project_Name || first.Project_ID || "No project selected", "text");
+  }
+
+  return {
+    title: "Dashboard fallback summary",
+    note: "Summarydata endpoint is not available in the deployed Apps Script. Showing dashboard-based fallback indicators.",
+    cards,
+    rows
+  };
+}
+
+async function im3LoadSelectedSummary() {
+  const select = document.getElementById("im3SummarySelect");
+  const meta = document.getElementById("im3SummaryMeta");
+  const title = document.getElementById("im3SummaryTitle");
+  if (!select) return;
+
+  const viewId = select.value || im3State.summaryView || IM3_SUMMARY_VIEWS[0].id;
+  im3State.summaryView = viewId;
+  const view = IM3_SUMMARY_VIEWS.find(v => v.id === viewId) || IM3_SUMMARY_VIEWS[0];
+  if (title) title.textContent = view.title;
+
+  try {
+    const projectId = typeof im3SelectedAnalysisProjectId === "function" ? im3SelectedAnalysisProjectId() : "";
+    const data = await im3Jsonp("summarydata", { view: viewId, filters: im3FilterParam(), projectId }, 35000);
+    im3RenderSummaryCards(data);
+    if (meta) {
+      const cleanNote = im3CleanVisualText(data.note || data.title || view.title);
+      meta.textContent = cleanNote || "Dashboard indicators updated for the selected project.";
+    }
+  } catch (err) {
+    const msg = String(err || "");
+    if (/Unknown action:\s*summarydata/i.test(msg) || /summarydata/i.test(msg)) {
+      try {
+        const projectId = typeof im3SelectedAnalysisProjectId === "function" ? im3SelectedAnalysisProjectId() : "";
+        const dashboardData = await im3Jsonp("dashboard", { filters: im3FilterParam(), projectId }, 35000);
+        const fallback = im3BuildFallbackSummaryCardsFromDashboard(viewId, dashboardData || {});
+        im3RenderSummaryCards(fallback);
+        if (meta) meta.textContent = fallback.note + " To unlock full module-specific summaries, paste and deploy the updated Apps Script package.";
+      } catch (fallbackErr) {
+        if (meta) meta.textContent = "Could not load this dashboard view: " + fallbackErr;
+        im3RenderSummaryCards({ cards: [] });
+      }
+    } else {
+      if (meta) meta.textContent = "Could not load this dashboard view: " + err;
+      im3RenderSummaryCards({ cards: [] });
+    }
+  }
+
+  if (typeof im3AttachImageFallbacks === "function") im3AttachImageFallbacks();
+}
+/* ===== end v2.7 robust summary dashboard fallback ===== */
+
+
+/* ===== v2.9 reference summary-card renderer =====
+   Aligns the Tilda im3-summary-card with the Apps Script v1.9/v2.9
+   card-based summarydata response. This final override intentionally avoids
+   old table IDs and renders only into im3SummaryCards + im3SummarySource.
+*/
+function im3FormatSummaryCardValueV29(value, format) {
+  if (value === undefined || value === null || value === "") return "—";
+  const f = String(format || "").toLowerCase();
+  const n = im3NumberValue(value);
+  if (!isNaN(n)) {
+    if (/percent/.test(f)) return ((Math.abs(n) <= 1 ? n * 100 : n).toFixed(2)) + "%";
+    if (/money|usd|cash|npv|capex|opex|revenue|cost|price|value/.test(f)) {
+      const abs = Math.abs(n);
+      if (abs >= 1e9) return "USD " + (n / 1e9).toFixed(2) + "B";
+      if (abs >= 1e6) return "USD " + (n / 1e6).toFixed(2) + "M";
+      return "USD " + Number(n.toFixed(2)).toLocaleString();
+    }
+    if (/score/.test(f)) return Number(n.toFixed(2)).toLocaleString();
+    if (/plain|integer/.test(f)) return Number.isInteger(n) ? String(n) : Number(n.toFixed(2)).toLocaleString();
+  }
+  return im3CleanVisualText(value);
+}
+
+function im3RenderSummaryCards(data) {
+  const box = document.getElementById("im3SummaryCards");
+  const source = document.getElementById("im3SummarySource");
+  if (!box) return;
+
+  let cards = Array.isArray(data?.cards) ? data.cards : [];
+  if (!cards.length && Array.isArray(data?.rows) && data.rows.length) {
+    const first = data.rows[0];
+    cards = Object.keys(first).filter(k => !String(k).startsWith("__")).slice(0, 12).map(k => ({
+      label: im3PrettyLabel(k),
+      value: first[k],
+      format: /usd|npv|capex|opex|revenue|cost|price|cash/i.test(k) ? "money" : (/rate|irr|probability|percent|%/i.test(k) ? "percent" : "plain"),
+      source: data.sheetName || "summarydata"
+    }));
+  }
+
+  if (!cards.length) {
+    box.innerHTML = `<div class="im3-summary-empty">No summary indicators available for this view or filter.</div>`;
+    if (source) source.textContent = data?.note || "No source data returned.";
+    return;
+  }
+
+  box.innerHTML = cards.map(card => `
+    <div class="im3-summary-kpi">
+      <span>${im3Esc(im3CleanVisualText(card.label || "Indicator"))}</span>
+      <strong>${im3Esc(im3FormatSummaryCardValueV29(card.value, card.format))}</strong>
+      <small>${im3Esc(im3CleanVisualText(card.source || data.sourceRange || data.sourceSheet || "Google Sheets"))}</small>
+    </div>
+  `).join("");
+
+  if (source) {
+    const pieces = [];
+    if (data.sourceSheet) pieces.push("Sheet: " + im3CleanVisualText(data.sourceSheet));
+    if (data.sourceRange) pieces.push("Range: " + im3CleanVisualText(data.sourceRange));
+    if (data.projectId) pieces.push("Project: " + im3CleanVisualText(data.projectId));
+    if (data.version) pieces.push("API: " + im3CleanVisualText(data.version));
+    source.textContent = pieces.length ? pieces.join(" | ") : (data.note || "Summary loaded from Google Sheets.");
+  }
+}
+
+async function im3LoadSelectedSummary() {
+  const select = document.getElementById("im3SummarySelect");
+  const meta = document.getElementById("im3SummaryMeta");
+  const title = document.getElementById("im3SummaryTitle");
+  if (!select) return;
+
+  const viewId = select.value || im3State.summaryView || IM3_SUMMARY_VIEWS[0].id;
+  im3State.summaryView = viewId;
+  const view = IM3_SUMMARY_VIEWS.find(v => v.id === viewId) || IM3_SUMMARY_VIEWS[0];
+  if (title) title.textContent = view.title;
+  if (meta) meta.textContent = "Loading " + view.title + "...";
+
+  try {
+    const projectId = typeof im3SelectedAnalysisProjectId === "function" ? im3SelectedAnalysisProjectId() : "";
+    const data = await im3Jsonp("summarydata", { view: viewId, filters: im3FilterParam(), projectId }, 45000);
+    im3RenderSummaryCards(data);
+    if (meta) meta.textContent = im3CleanVisualText(data.note || data.message || (view.title + " loaded."));
+  } catch (err) {
+    try {
+      const projectId = typeof im3SelectedAnalysisProjectId === "function" ? im3SelectedAnalysisProjectId() : "";
+      const dashboardData = await im3Jsonp("dashboard", { filters: im3FilterParam(), projectId }, 35000);
+      const fallback = typeof im3BuildFallbackSummaryCardsFromDashboard === "function"
+        ? im3BuildFallbackSummaryCardsFromDashboard(viewId, dashboardData || {})
+        : { cards: [] };
+      im3RenderSummaryCards(fallback);
+      if (meta) meta.textContent = "Fallback dashboard indicators loaded. Deploy the updated Apps Script to unlock full module summary blocks.";
+    } catch (fallbackErr) {
+      im3RenderSummaryCards({ cards: [] });
+      if (meta) meta.textContent = "Could not load this dashboard view: " + fallbackErr;
+    }
+  }
+
+  if (typeof im3AttachImageFallbacks === "function") im3AttachImageFallbacks();
+}
+/* ===== end v2.9 reference summary-card renderer ===== */
+
+/* ============================================================
+ * IM³ Framework MVP — Graph Studio Advanced Analytics v3.0
+ * Additive frontend layer. Keeps existing time-series Graph Studio.
+ * ============================================================ */
+
+function im3IsAdvancedTemplateV30(template) {
+  return template && (template.dataMode === "advanced" || template.chartKind || String(template.id || "").match(/radar|funnel|tornado|waterfall|distribution|heatmap|bubble|breakdown|alignment|confidence/i));
+}
+
+const im3RenderChartControlsV20Base = im3RenderChartControls;
+im3RenderChartControls = function() {
+  im3RenderChartControlsV20Base();
+  const displaySelect = document.getElementById("chartDisplayType");
+  if (displaySelect) {
+    displaySelect.innerHTML = `
+      <option value="auto">Automatic</option>
+      <option value="line">Line</option>
+      <option value="bar">Bar</option>
+      <option value="radar">Radar</option>
+      <option value="doughnut">Doughnut</option>
+      <option value="scatter">Scatter</option>`;
+  }
+};
+
+const im3ApplyGraphTemplateV20Base = im3ApplyGraphTemplate;
+im3ApplyGraphTemplate = function(templateId) {
+  im3ApplyGraphTemplateV20Base(templateId);
+  const templates = im3State.metadata.graphTemplates || [];
+  const template = templates.find(t => t.id === templateId) || templates[0] || {};
+  const hint = document.getElementById("im3GraphHint");
+  if (hint && im3IsAdvancedTemplateV30(template)) {
+    hint.textContent = (template.description || "Advanced IM³ analytical chart.") + " This template reads model outputs directly and does not replace existing time-series graphs.";
+  }
+};
+
+async function im3BuildChart() {
+  try {
+    const templates = im3State.metadata.graphTemplates || [];
+    const template = templates.find(t => t.id === document.getElementById("chartTemplate")?.value) || {};
+
+    if (im3IsAdvancedTemplateV30(template)) {
+      document.getElementById("advancedChartTitle").textContent = template.title || "Advanced IM³ chart";
+      const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
+      const data = await im3Jsonp("advancedchartdata", { templateId: template.id, filters: im3FilterParam(), projectId }, 60000);
+      im3RenderAdvancedChartV30(data);
+      im3State.chartBuilt = true;
+      return;
+    }
+
+    if (!im3ValidateMetricSelectionV20()) {
+      im3ShowAlert("Select compatible metrics before rendering the graph.", "error");
+      return;
+    }
+    const metrics = im3SelectedMetricIdsV20();
+    const displayType = document.getElementById("chartDisplayType")?.value || "auto";
+    const chartType = displayType === "auto" ? (template.defaultChart || "line") : displayType;
+    document.getElementById("advancedChartTitle").textContent = `${template.title || "Time Series"} — ${metrics.map(id => im3MetricByIdV20(id)?.label || id).join(", ")}`;
+    const data = await im3Jsonp("timeseries", { filters: im3FilterParam(), metrics: im3Encode(metrics), groupBy:"Project_Name" }, 45000);
+    if (!data.series || !data.series.some(s => s.data && s.data.length)) {
+      im3ShowAlert("No data found for selected metrics and filters.", "info");
+      im3ClearActiveChart();
+      return;
+    }
+    im3State.chartBuilt = true;
+    im3RenderTimeSeriesV20(data, chartType);
+  } catch (err) {
+    im3ShowAlert("Chart error: " + err, "error");
+    console.error(err);
+  }
+}
+
+function im3RenderAdvancedChartV30(data) {
+  if (!data) {
+    im3ShowAlert("No advanced chart data returned.", "info");
+    im3ClearActiveChart();
+    return;
+  }
+  const kind = data.chartType || data.template?.chartKind || "bar";
+  if ((data.labels && data.labels.length === 0) && (!data.points || !data.points.length)) {
+    im3ShowAlert(data.narrative || "No data available for this advanced chart.", "info");
+    im3ClearActiveChart();
+    return;
+  }
+  im3DestroyActiveChart();
+  if (kind === "scatter") return im3RenderAdvancedScatterV30(data);
+  if (kind === "radar") return im3RenderAdvancedRadarV30(data);
+  if (kind === "doughnut") return im3RenderAdvancedDoughnutV30(data);
+  return im3RenderAdvancedBarV30(data);
+}
+
+function im3RenderAdvancedBarV30(data) {
+  const chartKind = data.template?.chartKind || data.chartType || "bar";
+  const isHorizontal = chartKind === "horizontalBar" || data.indexAxis === "y";
+  const datasets = (data.datasets || []).map(ds => ({
+    label: ds.label || data.yLabel || "Value",
+    data: ds.data || [],
+    borderWidth: 1,
+    borderRadius: 6
+  }));
+  im3State.charts.advanced = new Chart(document.getElementById("im3AdvancedChart"), {
+    type: "bar",
+    data: { labels: data.labels || [], datasets },
+    options: {
+      indexAxis: isHorizontal ? "y" : "x",
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: { mode: "nearest", intersect: false },
+        title: { display: !!data.narrative, text: data.narrative || "" }
+      },
+      scales: {
+        x: { title: { display: true, text: isHorizontal ? (data.yLabel || "Value") : "Category" }, grid: { display: !isHorizontal } },
+        y: { title: { display: true, text: isHorizontal ? "Indicator" : (data.yLabel || "Value") }, grid: { color: "rgba(25,58,100,.10)" } }
+      }
+    }
+  });
+}
+
+function im3RenderAdvancedRadarV30(data) {
+  im3State.charts.advanced = new Chart(document.getElementById("im3AdvancedChart"), {
+    type: "radar",
+    data: {
+      labels: data.labels || [],
+      datasets: (data.datasets || []).map(ds => ({ label: ds.label || "Score", data: ds.data || [], borderWidth: 2, fill: true }))
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: "bottom" }, title: { display: !!data.narrative, text: data.narrative || "" } },
+      scales: { r: { beginAtZero: true, max: 100, ticks: { stepSize: 20 } } }
+    }
+  });
+}
+
+function im3RenderAdvancedDoughnutV30(data) {
+  im3State.charts.advanced = new Chart(document.getElementById("im3AdvancedChart"), {
+    type: "doughnut",
+    data: { labels: data.labels || [], datasets: (data.datasets || [{ data: [] }]).map(ds => ({ label: ds.label || "Value", data: ds.data || [] })) },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: data.template?.chartKind === "gauge" ? "70%" : "60%",
+      plugins: { legend: { position: "bottom" }, title: { display: !!data.narrative, text: data.narrative || "" } }
+    }
+  });
+}
+
+function im3RenderAdvancedScatterV30(data) {
+  const points = (data.points || []).map(p => ({ x: p.x, y: p.y, label: p.label || "Point" }));
+  im3State.charts.advanced = new Chart(document.getElementById("im3AdvancedChart"), {
+    type: "scatter",
+    data: { datasets: [{ label: data.template?.title || "Projects", data: points, pointRadius: 6, pointHoverRadius: 8 }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      parsing: false,
+      plugins: {
+        legend: { position: "bottom" },
+        title: { display: !!data.narrative, text: data.narrative || "" },
+        tooltip: { callbacks: { label: ctx => `${ctx.raw.label}: ${ctx.raw.x}, ${ctx.raw.y}` } }
+      },
+      scales: {
+        x: { title: { display: true, text: data.xLabel || "X" }, grid: { color: "rgba(25,58,100,.10)" } },
+        y: { title: { display: true, text: data.yLabel || "Y" }, grid: { color: "rgba(25,58,100,.10)" } }
+      }
+    }
+  });
+}
+
+/* ===== end Graph Studio Advanced Analytics v3.0 ===== */

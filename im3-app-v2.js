@@ -5,7 +5,7 @@ if (window.Chart) {
   Chart.defaults.plugins.legend.labels.usePointStyle = true;
 }
 
-const IM3_API_URL = "https://script.google.com/macros/s/AKfycbzLzHvbV7InvhpNitOKvf0pQmx50ydgWey5rvFAn8bMR2eGynHcZH40RDdXXKyw7ai5/exec";
+const IM3_API_URL = "https://script.google.com/macros/s/AKfycbwoQNH_FPGYn-EwE9suacYxWPLlGKdKK__iCajr6xQ57n0-KXWO_nZ7-tlZPpUid_bY/exec";
 
 const ICONS8 = {
   projects: "https://img.icons8.com/fluency-systems-regular/48/project.png",
@@ -1008,7 +1008,7 @@ function im3ReportProgressElements() {
 }
 
 function im3SetReportButtonsBusy(isBusy) {
-  ["im3PdfBtn", "im3DetailedReportBtn", "im3ClearReportsBtn"].forEach(id => {
+  ["im3PdfBtn", "im3DetailedReportBtn", "im3InvestmentPackBtn", "im3ClearReportsBtn"].forEach(id => {
     const btn = document.getElementById(id);
     if (btn) btn.disabled = !!isBusy;
   });
@@ -1083,7 +1083,26 @@ function im3ClearGeneratedReports() {
 
 function im3AppendReportLink(result, label) {
   const box = document.getElementById("im3ReportLinks");
-  if (!box || !result || !result.pdfUrl) return;
+  if (!box || !result) return;
+  if (Array.isArray(result.files) && result.files.length) {
+    const group = document.createElement("div");
+    group.className = "im3-report-link-group";
+    const title = document.createElement("strong");
+    title.textContent = label || "Investment Decision Pack";
+    group.appendChild(title);
+    result.files.forEach(file => {
+      if (!file || !file.pdfUrl) return;
+      const a = document.createElement("a");
+      a.href = file.pdfUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = (file.reportType ? im3PrettyLabel(file.reportType) + " — " : "") + (file.projectName || "Open report");
+      group.appendChild(a);
+    });
+    box.appendChild(group);
+    return;
+  }
+  if (!result.pdfUrl) return;
   const a = document.createElement("a");
   a.href = result.pdfUrl;
   a.target = "_blank";
@@ -1122,15 +1141,31 @@ async function im3GenerateDetailedReport() {
   try {
     const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
     const language = im3SelectedReportLanguage();
-    im3StartReportProgress("Detailed investment report — " + im3ReportLanguageLabel(language), 90);
-    im3ShowAlert("Generating detailed investment report (" + im3ReportLanguageLabel(language) + ") in Google Drive...", "info");
+    im3StartReportProgress("Technical investment report — " + im3ReportLanguageLabel(language), 90);
+    im3ShowAlert("Generating technical investment report (" + im3ReportLanguageLabel(language) + ") in Google Drive...", "info");
     const result = await im3Jsonp("detailedreport", { filters: im3FilterParam(), projectId, language }, 150000);
-    im3FinishReportProgress("Detailed investment report generated successfully.");
-    im3ShowAlert("Detailed investment report generated. Use the report link below to open it.", "success");
-    im3AppendReportLink(result, "Open Detailed Investment Report — " + im3ReportLanguageLabel(language));
+    im3FinishReportProgress("Technical investment report generated successfully.");
+    im3ShowAlert("Technical investment report generated. Use the report link below to open it.", "success");
+    im3AppendReportLink(result, "Open Technical Investment Report — " + im3ReportLanguageLabel(language));
   } catch(err) {
     im3FailReportProgress("Detailed report generation failed: " + err);
     im3ShowAlert("Detailed report error: " + err, "error");
+  }
+}
+
+async function im3GenerateInvestmentPack() {
+  try {
+    const projectId = im3SelectedAnalysisProjectId ? im3SelectedAnalysisProjectId() : "";
+    const language = im3SelectedReportLanguage();
+    im3StartReportProgress("Investment Decision Pack — " + im3ReportLanguageLabel(language), 180);
+    im3ShowAlert("Generating Investment Decision Pack (" + im3ReportLanguageLabel(language) + ") in Google Drive...", "info");
+    const result = await im3Jsonp("investmentpack", { filters: im3FilterParam(), projectId, language }, 240000);
+    im3FinishReportProgress("Investment Decision Pack generated successfully.");
+    im3ShowAlert("Investment Decision Pack generated. Use the report links below to open each file.", "success");
+    im3AppendReportLink(result, "Investment Decision Pack — " + im3ReportLanguageLabel(language));
+  } catch(err) {
+    im3FailReportProgress("Investment Decision Pack generation failed: " + err);
+    im3ShowAlert("Investment Decision Pack error: " + err, "error");
   }
 }
 function im3ToggleTheme() { const app=document.getElementById("im3-app"); const isNight=app.getAttribute("data-theme")==="night"; app.setAttribute("data-theme", isNight?"day":"night"); document.getElementById("im3ThemeText").textContent=isNight?"Night mode":"Day mode"; document.getElementById("im3ThemeIcon").src=isNight?"https://img.icons8.com/fluency-systems-regular/48/moon-symbol.png":"https://img.icons8.com/fluency-systems-regular/48/sun.png"; }
@@ -1142,6 +1177,8 @@ document.getElementById("im3BackBtn").addEventListener("click",()=>im3LoadModule
 document.getElementById("im3PdfBtn").addEventListener("click",im3GeneratePdf);
 const im3DetailedBtn = document.getElementById("im3DetailedReportBtn");
 if (im3DetailedBtn) im3DetailedBtn.addEventListener("click", im3GenerateDetailedReport);
+const im3InvestmentPackBtn = document.getElementById("im3InvestmentPackBtn");
+if (im3InvestmentPackBtn) im3InvestmentPackBtn.addEventListener("click", im3GenerateInvestmentPack);
 const im3ClearReportsBtn = document.getElementById("im3ClearReportsBtn");
 if (im3ClearReportsBtn) im3ClearReportsBtn.addEventListener("click", im3ClearGeneratedReports);
 document.getElementById("im3ApplyFiltersBtn").addEventListener("click",im3ApplyFilters);

@@ -28,7 +28,7 @@ const ICONS8 = {
   default: "https://img.icons8.com/fluency-systems-regular/48/module.png"
 };
 
-const im3State = { metadata:null, modules:[], moduleIndex:0, currentModule:null, currentRows:[], currentSelected:null, dropdowns:{}, filterOptions:{}, filters:{}, charts:{}, chartBuilt:false, summaryView:"production_summary" };
+const im3State = { metadata:null, modules:[], moduleIndex:0, currentModule:null, currentRows:[], currentSelected:null, currentHeaders:[], dropdowns:{}, filterOptions:{}, filters:{}, charts:{}, chartBuilt:false, summaryView:"production_summary", saving:false };
 
 
 const IM3_SUMMARY_VIEWS = [
@@ -155,7 +155,9 @@ async function im3Init() {
 
     im3Loading(42, "Loading filters and dropdown lists...");
     const filtersPromise = im3Jsonp("filteroptions", {}, 35000).catch(() => im3State.metadata.filters || {});
-    const dropdownsPromise = im3Jsonp("dropdowns", { scope:"all" }, 35000).catch(() => im3State.metadata.dropdowns || {});
+    const dropdownsPromise = im3Jsonp("dropdowns", { scope:"all" }, 35000)
+      .catch(() => im3Jsonp("configoptions", {}, 35000))
+      .catch(() => im3State.metadata.dropdowns || {});
     const loaded = await Promise.all([filtersPromise, dropdownsPromise]);
     im3State.filterOptions = loaded[0] || {};
     im3State.dropdowns = loaded[1] || {};
@@ -837,11 +839,12 @@ async function im3LoadModule(moduleId, rowId="") {
   im3State.currentModule = moduleMeta;
   im3State.currentRows = rows;
   im3State.currentSelected = selected;
+  im3State.currentHeaders = data.headers || data.fields || Object.keys(selected);
 
   document.getElementById("im3ModuleTitle").textContent = im3ModuleLabel(moduleMeta);
   document.getElementById("im3ModuleDescription").textContent = moduleMeta.description || `Loaded ${rows.length} row(s) from Google Sheets.`;
   im3RenderRowSelect(rows, selected, moduleMeta);
-  im3RenderForm(moduleMeta, selected, data.headers || data.fields || Object.keys(selected));
+  im3RenderForm(moduleMeta, selected, im3State.currentHeaders);
   im3RenderTable("im3Table", rows, 100);
   im3SetProgress(im3State.moduleIndex);
 }
@@ -851,12 +854,19 @@ function im3RenderRowSelect(rows, selected, moduleMeta={}) {
   if (!sel) return;
   const keyColumn = moduleMeta.keyColumn || "";
   const currentId = selected[keyColumn] || selected.Row_ID || selected.ID || selected.Project_ID || selected.id || "";
-  sel.innerHTML = (rows || []).map((r, idx) => {
+  const createOption = moduleMeta.readOnly ? "" : `<option value="__new__">${im3Esc("Create new record")}</option>`;
+  sel.innerHTML = createOption + (rows || []).map((r, idx) => {
     const id = r[keyColumn] || r.Row_ID || r.ID || r.Project_ID || r.id || String(idx + 1);
     const label = r.Project_Name || r.Name || r.Scenario_Name || r.Parameter_Name || r.Parameter || r[keyColumn] || id;
     return `<option value="${im3Esc(id)}" ${String(id) === String(currentId) ? "selected" : ""}>${im3Esc(im3CleanOptionLabel(label))}</option>`;
   }).join("");
   sel.onchange = async () => {
+    if (sel.value === "__new__") {
+      im3State.currentSelected = {};
+      im3RenderForm(im3State.currentModule, {}, im3State.currentHeaders || []);
+      im3SetManualStatus("validation", "New manual record ready. Fill required editable fields before saving.", "info");
+      return;
+    }
     await im3LoadModule(im3State.currentModule.id, sel.value);
     const projectId = im3GetCurrentProjectId();
     if (projectId) {
@@ -871,12 +881,28 @@ function im3RenderRowSelect(rows, selected, moduleMeta={}) {
 
 
 function im3FieldIsReadonly(key, value, moduleMeta={}) {
+  return !im3IsEditableField(moduleMeta, key) || im3IsCalculatedField(key, value);
+}
+
+function im3IsEditableField(moduleMeta, key) {
+  if (!moduleMeta || moduleMeta.readOnly) return false;
+  if (!key || key === moduleMeta.keyColumn || key === "__rowNumber" || key === "Row_ID" || key === "ID") return false;
   const editable = new Set(moduleMeta.editableFields || []);
-  if (moduleMeta.readOnly) return true;
-  if (key === moduleMeta.keyColumn || key === "__rowNumber" || key === "Row_ID" || key === "ID") return true;
+  return editable.has(key);
+}
+
+function im3IsCalculatedField(key, value) {
   if (typeof value === "string" && value.trim().startsWith("=")) return true;
-  if (/^(__|formula_|calculated_)/i.test(key)) return true;
-  return editable.size ? !editable.has(key) : false;
+  return /(^__|formula|calculated|output|result|display|recommendation|decision_label|risk_label)/i.test(String(key || ""));
+}
+
+function im3IsRequiredField(moduleMeta, key) {
+  const id = String(moduleMeta?.id || "");
+  if (id === "projects" && key === "Project_Name") return true;
+  if (["assumptions","production","prices","capex_opex","mcda_scores"].includes(id) && key === "Project_ID") return true;
+  if (["production","prices","capex_opex","risk_scenarios","map_dnpv","rov","mcda_scores","system_dynamics","sd_parameters","sensitivity","monte_carlo"].includes(id) && key === "Assumption_Set_ID") return true;
+  if ((moduleMeta?.editableFields || []).includes("Year") && key === "Year") return true;
+  return false;
 }
 
 function im3DropdownOptions(moduleMeta, key, value) {
@@ -899,13 +925,15 @@ function im3RenderForm(moduleMeta, row, fields) {
     const value = row?.[key] ?? "";
     const readonly = im3FieldIsReadonly(key, value, moduleMeta);
     const label = im3Esc(im3PrettyLabel(key));
-    if (readonly) return `<label class="im3-field"><span>${label}</span><input name="${im3Esc(key)}" value="${im3Esc(value)}" readonly></label>`;
+    const required = im3IsRequiredField(moduleMeta, key);
+    const requiredMark = required ? ` <em class="im3-required-mark">*</em>` : "";
+    if (readonly) return `<label class="im3-field im3-readonly-calculated"><span>${label}</span><input name="${im3Esc(key)}" value="${im3Esc(value)}" readonly data-calculated="true"></label>`;
     const opts = im3DropdownOptions(moduleMeta, key, value);
     if (opts.length) {
-      return `<label class="im3-field"><span>${label}</span><select name="${im3Esc(key)}">${opts.map(o => `<option value="${im3Esc(o.value)}" ${String(o.value) === String(value) ? "selected" : ""}>${im3Esc(o.label)}</option>`).join("")}</select></label>`;
+      return `<label class="im3-field im3-editable-input im3-dropdown-input ${required ? "im3-required-field" : ""}"><span>${label}${requiredMark}</span><select name="${im3Esc(key)}" ${required ? "required" : ""}>${opts.map(o => `<option value="${im3Esc(o.value)}" ${String(o.value) === String(value) ? "selected" : ""}>${im3Esc(o.label)}</option>`).join("")}</select></label>`;
     }
     const type = /year|date/i.test(key) ? "text" : (/rate|irr|npv|cost|price|capex|opex|score|usd|percent|%|volume|capacity|production|tax|factor|amount|quantity|probability|value/i.test(key) ? "number" : "text");
-    return `<label class="im3-field"><span>${label}</span><input name="${im3Esc(key)}" type="${type}" step="any" value="${im3Esc(value)}"></label>`;
+    return `<label class="im3-field im3-editable-input ${required ? "im3-required-field" : ""}"><span>${label}${requiredMark}</span><input name="${im3Esc(key)}" type="${type}" step="any" value="${im3Esc(value)}" ${required ? "required" : ""}></label>`;
   }).join("");
 }
 
@@ -1171,7 +1199,7 @@ async function im3GenerateInvestmentPack() {
 function im3ToggleTheme() { const app=document.getElementById("im3-app"); const isNight=app.getAttribute("data-theme")==="night"; app.setAttribute("data-theme", isNight?"day":"night"); document.getElementById("im3ThemeText").textContent=isNight?"Night mode":"Day mode"; document.getElementById("im3ThemeIcon").src=isNight?"https://img.icons8.com/fluency-systems-regular/48/moon-symbol.png":"https://img.icons8.com/fluency-systems-regular/48/sun.png"; }
 
 document.getElementById("im3RefreshBtn").addEventListener("click",()=>im3LoadModule(im3State.currentModule.id,document.getElementById("im3RowSelect").value));
-document.getElementById("im3SaveBtn").addEventListener("click",im3SaveCurrent);
+document.getElementById("im3SaveBtn").addEventListener("click",()=>im3SaveCurrent());
 document.getElementById("im3NextBtn").addEventListener("click",async()=>{const ok=await im3SaveCurrent(); if(ok) im3LoadModuleByIndex(im3State.moduleIndex+1);});
 document.getElementById("im3BackBtn").addEventListener("click",()=>im3LoadModuleByIndex(im3State.moduleIndex-1));
 document.getElementById("im3PdfBtn").addEventListener("click",im3GeneratePdf);
@@ -1823,14 +1851,16 @@ function im3RenderTimeSeriesV20(data, chartType) {
 
 async function im3ValidateCurrent() {
   try {
-    const form = document.getElementById("im3Form");
-    if (!form || !im3State.currentModule) return;
-    const payload = {};
-    Array.from(new FormData(form).entries()).forEach(([k,v]) => payload[k] = v);
-    const result = await im3Jsonp("validatemodel", { moduleId:im3State.currentModule.id, payload:im3Encode(payload) }, 35000);
-    if (result.valid) im3ShowAlert(result.warnings?.length ? "Validation passed with warnings: " + result.warnings.join(" | ") : "Validation passed. Inputs are safe to save.", "success");
-    else im3ShowAlert("Validation failed: " + result.errors.join(" | "), "error");
+    const result = im3ValidateBeforeManualSave();
+    if (!result.valid) {
+      im3SetManualStatus("validation", "Validation failed: " + result.errors.join(" | "), "error");
+      im3ShowAlert("Validation failed: " + result.errors.join(" | "), "error");
+      return;
+    }
+    im3SetManualStatus("validation", result.warnings.length ? "Validation passed with warnings: " + result.warnings.join(" | ") : "Validation passed. Inputs are safe to save.", "success");
+    im3ShowAlert(result.warnings.length ? "Validation passed with warnings." : "Validation passed. Inputs are safe to save.", "success");
   } catch (err) {
+    im3SetManualStatus("validation", "Validation error: " + err, "error");
     im3ShowAlert("Validation error: " + err, "error");
   }
 }
@@ -2507,3 +2537,126 @@ function im3FormatChartValueV41(value, unit) {
   if (Math.abs(n) >= 1000000) return (n/1000000).toFixed(2) + "M";
   return n.toLocaleString(undefined, { maximumFractionDigits:4 });
 }
+
+/* ============================================================
+ * IM³ Tilda Frontend V70 — Manual save integrity client
+ * ============================================================ */
+
+function im3ManualStatusEl() {
+  return document.getElementById("im3ManualSaveStatus");
+}
+
+function im3SetManualStatus(step, message, type="info") {
+  const el = im3ManualStatusEl();
+  if (!el) return;
+  el.className = "im3-manual-status " + type;
+  el.innerHTML = `<strong>${im3Esc(im3PrettyLabel(step || "status"))}</strong><span>${im3Esc(message || "")}</span>`;
+}
+
+function im3SetSaveBusy(isBusy, message) {
+  im3State.saving = !!isBusy;
+  ["im3SaveBtn", "im3NextBtn", "im3ValidateBtn", "im3ReloadResultsBtn"].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !!isBusy;
+  });
+  if (message) im3SetManualStatus("save progress", message, "info");
+}
+
+function im3CollectEditablePayload() {
+  const form = document.getElementById("im3Form");
+  const moduleMeta = im3State.currentModule || {};
+  const payload = {};
+  if (!form || moduleMeta.readOnly) return payload;
+  Array.from(new FormData(form).entries()).forEach(([key, value]) => {
+    const currentValue = im3State.currentSelected ? im3State.currentSelected[key] : "";
+    if (!im3IsEditableField(moduleMeta, key)) return;
+    if (im3IsCalculatedField(key, currentValue)) return;
+    if (value === "" && im3IsCalculatedField(key, value)) return;
+    payload[key] = value;
+  });
+  return payload;
+}
+
+function im3ValidateBeforeManualSave() {
+  const errors = [];
+  const warnings = [];
+  const moduleMeta = im3State.currentModule || {};
+  const payload = im3CollectEditablePayload();
+  const rowSelect = document.getElementById("im3RowSelect");
+  const isNew = !rowSelect || rowSelect.value === "__new__";
+
+  if (!moduleMeta.id) errors.push("No active module selected.");
+  if (moduleMeta.readOnly) errors.push("This module is read-only and cannot be saved manually.");
+  if (moduleMeta.id === "projects" && isNew && !String(payload.Project_Name || "").trim()) errors.push("Project_Name is required for a new project.");
+  if (["assumptions","production","prices","capex_opex","mcda_scores"].includes(moduleMeta.id) && !String(payload.Project_ID || "").trim()) errors.push("Project_ID is required for this module.");
+  if (["production","prices","capex_opex","risk_scenarios","map_dnpv","rov","mcda_scores","system_dynamics","sd_parameters","sensitivity","monte_carlo"].includes(moduleMeta.id) && !String(payload.Assumption_Set_ID || "").trim()) errors.push("Assumption_Set_ID is required for this module.");
+  if ((moduleMeta.editableFields || []).includes("Year") && !String(payload.Year || "").trim()) errors.push("Year is required for this module.");
+
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value === "" || value === null || value === undefined) return;
+    const raw = String(value).trim();
+    if (/year/i.test(key) && !/^\d{4}$/.test(raw)) errors.push(key + " must be a four-digit year.");
+    if (/%|rate|factor|probability|utilization|uptime|discount|tax|inflation|escalation|multiplier|score|value|amount|quantity|cost|price|usd|production|volume|capacity|reserve|npv|irr|payback/i.test(key)) {
+      const normalized = raw.replace(/,/g, ".");
+      if (normalized !== "" && isNaN(Number(normalized))) errors.push(key + " must be numeric.");
+    }
+  });
+
+  return { valid:errors.length === 0, errors, warnings, payload };
+}
+
+async function im3SaveManualInput() {
+  if (im3State.saving) return false;
+  try {
+    const validation = im3ValidateBeforeManualSave();
+    if (!validation.valid) {
+      im3SetManualStatus("validation status", "Validation failed: " + validation.errors.join(" | "), "error");
+      im3ShowAlert("Save blocked: " + validation.errors.join(" | "), "error");
+      return false;
+    }
+
+    const rowSelect = document.getElementById("im3RowSelect");
+    const rowId = rowSelect && rowSelect.value !== "__new__" ? rowSelect.value : "";
+    im3SetSaveBusy(true, "Saving to Google Sheets...");
+    const result = await im3Jsonp("manualsave", {
+      moduleId: im3State.currentModule.id,
+      key: rowId,
+      rowId,
+      payload: im3Encode(validation.payload)
+    }, 60000);
+
+    im3SetManualStatus("calculation status", "Recalculating model...", "info");
+    await im3RefreshAfterManualSave(result);
+    im3SetManualStatus("success", "Results updated.", "success");
+    im3ShowAlert((result.mode === "insert" ? "New record saved: " : "Record updated: ") + (result.keyValue || ""), "success");
+    return true;
+  } catch (err) {
+    im3SetManualStatus("error message", String(err), "error");
+    im3ShowAlert("Manual save error: " + err, "error");
+    return false;
+  } finally {
+    im3SetSaveBusy(false);
+  }
+}
+
+async function im3RefreshAfterManualSave(result={}) {
+  const moduleId = result.moduleId || im3State.currentModule?.id;
+  const key = result.keyValue || "";
+  if (moduleId) await im3LoadModule(moduleId, key);
+  await im3LoadDashboard();
+  await im3LoadSelectedSummary();
+  if (im3State.chartBuilt) await im3BuildChart();
+}
+
+im3SaveCurrent = async function() {
+  return im3SaveManualInput();
+};
+
+document.addEventListener("DOMContentLoaded", () => {
+  const reloadBtn = document.getElementById("im3ReloadResultsBtn");
+  if (reloadBtn) reloadBtn.addEventListener("click", async () => {
+    im3SetManualStatus("calculation status", "Reloading calculated results...", "info");
+    await im3RefreshAfterManualSave({});
+    im3SetManualStatus("success", "Results updated.", "success");
+  });
+});

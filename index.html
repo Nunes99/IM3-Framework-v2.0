@@ -11,6 +11,17 @@ metadata, module, dashboard, chartdata, repairformulas, pdf, save.
 
 
 <link rel="stylesheet" href="./im3-style-v2.css">
+<style>
+  .im3-editable-input input,.im3-editable-input select{border-left:3px solid #1f78b4}
+  .im3-dropdown-input select{background-image:linear-gradient(90deg,rgba(31,120,180,.08),rgba(255,255,255,0))}
+  .im3-readonly-calculated input{background:rgba(25,58,100,.06);color:#637083;border-left:3px solid #9aa9b8}
+  .im3-required-mark{color:#c0392b;font-style:normal;font-weight:700}
+  .im3-required-field input,.im3-required-field select{box-shadow:inset 0 0 0 1px rgba(192,57,43,.18)}
+  .im3-manual-status{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid rgba(25,58,100,.14);display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
+  .im3-manual-status.info{background:#eef6fb;color:#193a64}
+  .im3-manual-status.success{background:#edf8f1;color:#0e6b3e}
+  .im3-manual-status.error{background:#fff0ed;color:#a93524}
+</style>
 <div id="im3-app" class="im3-app" data-theme="day">
 <div id="im3LoadingScreen" class="im3-loading-screen" aria-live="polite" aria-busy="true">
     <div class="im3-loading-box">
@@ -92,8 +103,12 @@ metadata, module, dashboard, chartdata, repairformulas, pdf, save.
       <div class="im3-form-actions">
         <button id="im3BackBtn" type="button" class="im3-btn ghost">Back</button>
         <button id="im3ValidateBtn" type="button" class="im3-btn ghost">Validate model</button>
-        <button id="im3SaveBtn" type="button" class="im3-btn soft">Save</button>
+        <button id="im3SaveBtn" type="button" class="im3-btn soft">Save manual input</button>
+        <button id="im3ReloadResultsBtn" type="button" class="im3-btn ghost">Reload results</button>
         <button id="im3NextBtn" type="button" class="im3-btn primary">Save & proceed</button>
+      </div>
+      <div id="im3ManualSaveStatus" class="im3-manual-status info" aria-live="polite">
+        <strong>Validation status</strong><span>Manual inputs are validated before saving to Google Sheets.</span>
       </div>
     </section>
 

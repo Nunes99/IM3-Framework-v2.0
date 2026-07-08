@@ -893,7 +893,27 @@ function im3IsEditableField(moduleMeta, key) {
 
 function im3IsCalculatedField(key, value) {
   if (typeof value === "string" && value.trim().startsWith("=")) return true;
-  return /(^__|formula|calculated|output|result|display|recommendation|decision_label|risk_label)/i.test(String(key || ""));
+  return /(^__|^calculated_|^output_|^result_|^display_|^recommendation_|^decision_label$|^risk_label$)/i.test(String(key || ""));
+}
+
+function im3IsFourDigitYearField(key) {
+  return /^(Year|Base_Year|Start_Year|End_Year|Exercise_Year)$/i.test(String(key || ""));
+}
+
+function im3IsTextField(key) {
+  return /(^|_)(ID|Name|Type|Phase|Location|Basin|Objective|Operator|Ownership|Currency|Status|Description|Notes|Unit|Stream|Source|Category|Frequency|Treatment|Area|Method|Trigger|Variable|Distribution|Group|Link|Formula|Module|Flag|Owner|Active|Editable|Scale)$/i.test(String(key || ""));
+}
+
+function im3IsNumericField(key) {
+  const name = String(key || "");
+  if (!name || im3IsTextField(name)) return false;
+  if (im3IsFourDigitYearField(name)) return true;
+  if (/^(Forecast_Horizon|Delay_Years|Payback_Years|Time_to_Exercise)$/i.test(name)) return true;
+  return /(^|_)(Rate|Factor|Probability|Utilization|Uptime|Multiplier|Score|Amount|Quantity|Cost|Price|USD|CAPEX|OPEX|NPV|IRR|DNPV|Revenue|Tax|Production|Volume|Capacity|Reserve|Weight|Min|Max|Shock|Volatility|Rank|Index|Years?)($|_)/i.test(name) || /%/.test(name);
+}
+
+function im3NumberInputType(key) {
+  return im3IsNumericField(key) ? "number" : "text";
 }
 
 function im3IsRequiredField(moduleMeta, key) {
@@ -932,7 +952,7 @@ function im3RenderForm(moduleMeta, row, fields) {
     if (opts.length) {
       return `<label class="im3-field im3-editable-input im3-dropdown-input ${required ? "im3-required-field" : ""}"><span>${label}${requiredMark}</span><select name="${im3Esc(key)}" ${required ? "required" : ""}>${opts.map(o => `<option value="${im3Esc(o.value)}" ${String(o.value) === String(value) ? "selected" : ""}>${im3Esc(o.label)}</option>`).join("")}</select></label>`;
     }
-    const type = /year|date/i.test(key) ? "text" : (/rate|irr|npv|cost|price|capex|opex|score|usd|percent|%|volume|capacity|production|tax|factor|amount|quantity|probability|value/i.test(key) ? "number" : "text");
+    const type = im3NumberInputType(key);
     return `<label class="im3-field im3-editable-input ${required ? "im3-required-field" : ""}"><span>${label}${requiredMark}</span><input name="${im3Esc(key)}" type="${type}" step="any" value="${im3Esc(value)}" ${required ? "required" : ""}></label>`;
   }).join("");
 }
@@ -2595,10 +2615,10 @@ function im3ValidateBeforeManualSave() {
   Object.entries(payload).forEach(([key, value]) => {
     if (value === "" || value === null || value === undefined) return;
     const raw = String(value).trim();
-    if (/year/i.test(key) && !/^\d{4}$/.test(raw)) errors.push(key + " must be a four-digit year.");
-    if (/%|rate|factor|probability|utilization|uptime|discount|tax|inflation|escalation|multiplier|score|value|amount|quantity|cost|price|usd|production|volume|capacity|reserve|npv|irr|payback/i.test(key)) {
-      const normalized = raw.replace(/,/g, ".");
-      if (normalized !== "" && isNaN(Number(normalized))) errors.push(key + " must be numeric.");
+    if (im3IsFourDigitYearField(key) && !/^\d{4}$/.test(raw)) errors.push(key + " must be a four-digit year.");
+    if (im3IsNumericField(key)) {
+      const normalized = raw.replace(/,/g, "").replace(/%/g, "").replace(/[^0-9.-]/g, "");
+      if (normalized === "" || isNaN(Number(normalized))) errors.push(key + " must be numeric.");
     }
   });
 

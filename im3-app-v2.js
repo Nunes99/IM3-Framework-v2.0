@@ -2725,12 +2725,31 @@ async function im3SaveManualInput() {
 }
 
 async function im3RefreshAfterManualSave(result={}) {
+  await im3ReloadDropdownsAfterManualSave();
   const moduleId = result.moduleId || im3State.currentModule?.id;
   const key = result.keyValue || "";
   if (moduleId) await im3LoadModule(moduleId, key);
   await im3LoadDashboard();
   await im3LoadSelectedSummary();
   if (im3State.chartBuilt) await im3BuildChart();
+}
+
+async function im3ReloadDropdownsAfterManualSave() {
+  try {
+    const filtersPromise = im3Jsonp("filteroptions", {}, 35000).catch(() => im3State.filterOptions || {});
+    const dropdownsPromise = im3Jsonp("dropdowns", { scope:"all" }, 35000)
+      .catch(() => im3Jsonp("configoptions", {}, 35000))
+      .catch(() => im3State.dropdowns || {});
+    const loaded = await Promise.all([filtersPromise, dropdownsPromise]);
+    im3State.filterOptions = loaded[0] || im3State.filterOptions || {};
+    im3State.dropdowns = im3NormalizeDropdownPayload(loaded[1] || {}, im3State.metadata?.dropdowns || {}, im3State.filterOptions);
+    if (im3State.metadata) {
+      im3State.metadata.filters = im3State.filterOptions;
+      im3State.metadata.dropdowns = im3State.dropdowns;
+    }
+  } catch (err) {
+    im3SetManualStatus("calculation status", "Saved, but dropdown refresh failed: " + err, "info");
+  }
 }
 
 im3SaveCurrent = async function() {

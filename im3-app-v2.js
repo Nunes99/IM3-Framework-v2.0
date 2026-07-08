@@ -74,6 +74,46 @@ function im3IsHiddenModule(module) {
 }
 function im3IconFor(id) { return ICONS8[id] || ICONS8.default; }
 
+function im3MergeDropdownMaps(...maps) {
+  const merged = {};
+  maps.forEach(map => {
+    if (!map || typeof map !== "object") return;
+    Object.keys(map).forEach(key => {
+      const value = map[key];
+      if (Array.isArray(value)) merged[key] = value;
+    });
+  });
+  return merged;
+}
+
+function im3DropdownsFromFilterOptions(filters={}) {
+  return {
+    __PROJECTS__: filters.projectIds || [],
+    __ASSUMPTIONS__: filters.assumptionSetIds || [],
+    __RISK_SCENARIOS__: filters.scenarioIds || [],
+    "00_Lookup_ProjectTypes": filters.projectTypes || [],
+    "00_Lookup_Locations": filters.locations || [],
+    "00_Lookup_ProjectPhases": filters.phases || [],
+    "00_Lookup_ProductStreams": filters.productStreams || [],
+    "00_Lookup_CostTypes": filters.costTypes || [],
+    "00_Lookup_ROV_OptionTypes": filters.optionTypes || [],
+    "00_Lookup_RiskLevels": filters.riskLevels || []
+  };
+}
+
+function im3NormalizeDropdownPayload(payload, metadataDropdowns={}, filters={}) {
+  return im3MergeDropdownMaps(
+    metadataDropdowns,
+    payload,
+    im3DropdownsFromFilterOptions(payload || {}),
+    im3DropdownsFromFilterOptions(filters || {})
+  );
+}
+
+function im3SafeDomId(value) {
+  return String(value || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
 function im3Jsonp(action, params={}, timeoutMs=30000) {
   return new Promise((resolve,reject)=>{
     const cb="im3_cb_"+Math.random().toString(36).slice(2);
@@ -160,7 +200,7 @@ async function im3Init() {
       .catch(() => im3State.metadata.dropdowns || {});
     const loaded = await Promise.all([filtersPromise, dropdownsPromise]);
     im3State.filterOptions = loaded[0] || {};
-    im3State.dropdowns = loaded[1] || {};
+    im3State.dropdowns = im3NormalizeDropdownPayload(loaded[1] || {}, im3State.metadata.dropdowns || {}, im3State.filterOptions);
     im3State.metadata.filters = im3State.filterOptions;
     im3State.metadata.dropdowns = im3State.dropdowns;
 
@@ -935,6 +975,10 @@ function im3DropdownOptions(moduleMeta, key, value) {
   return options;
 }
 
+function im3DropdownSource(moduleMeta, key) {
+  return (moduleMeta.dropdowns || {})[key] || "";
+}
+
 function im3RenderForm(moduleMeta, row, fields) {
   const form = document.getElementById("im3Form");
   if (!form) return;
@@ -949,8 +993,10 @@ function im3RenderForm(moduleMeta, row, fields) {
     const requiredMark = required ? ` <em class="im3-required-mark">*</em>` : "";
     if (readonly) return `<label class="im3-field im3-readonly-calculated"><span>${label}</span><input name="${im3Esc(key)}" value="${im3Esc(value)}" readonly data-calculated="true"></label>`;
     const opts = im3DropdownOptions(moduleMeta, key, value);
-    if (opts.length) {
-      return `<label class="im3-field im3-editable-input im3-dropdown-input ${required ? "im3-required-field" : ""}"><span>${label}${requiredMark}</span><select name="${im3Esc(key)}" ${required ? "required" : ""}>${opts.map(o => `<option value="${im3Esc(o.value)}" ${String(o.value) === String(value) ? "selected" : ""}>${im3Esc(o.label)}</option>`).join("")}</select></label>`;
+    if (opts.length || im3DropdownSource(moduleMeta, key)) {
+      const listId = "im3List_" + im3SafeDomId(moduleMeta.id || "module") + "_" + im3SafeDomId(key);
+      const source = im3DropdownSource(moduleMeta, key);
+      return `<label class="im3-field im3-editable-input im3-dropdown-input ${required ? "im3-required-field" : ""}"><span>${label}${requiredMark}</span><input name="${im3Esc(key)}" list="${im3Esc(listId)}" value="${im3Esc(value)}" data-dropdown-field="true" data-dropdown-source="${im3Esc(source)}" autocomplete="off" ${required ? "required" : ""}><datalist id="${im3Esc(listId)}">${opts.map(o => `<option value="${im3Esc(o.value)}" label="${im3Esc(o.label)}"></option>`).join("")}</datalist></label>`;
     }
     const type = im3NumberInputType(key);
     return `<label class="im3-field im3-editable-input ${required ? "im3-required-field" : ""}"><span>${label}${requiredMark}</span><input name="${im3Esc(key)}" type="${type}" step="any" value="${im3Esc(value)}" ${required ? "required" : ""}></label>`;
@@ -2597,6 +2643,24 @@ function im3CollectEditablePayload() {
   return payload;
 }
 
+function im3DropdownManualWarnings(payload) {
+  const form = document.getElementById("im3Form");
+  const warnings = [];
+  if (!form) return warnings;
+  form.querySelectorAll("[data-dropdown-field='true']").forEach(input => {
+    const key = input.name;
+    const value = String(payload[key] ?? "").trim();
+    if (!value) return;
+    const listId = input.getAttribute("list");
+    const list = listId ? document.getElementById(listId) : null;
+    const options = list ? Array.from(list.options).map(o => String(o.value || "").trim()).filter(Boolean) : [];
+    if (options.length && !options.some(o => o.toLowerCase() === value.toLowerCase())) {
+      warnings.push(im3PrettyLabel(key) + " uses a manual value not found in the Google Sheets list.");
+    }
+  });
+  return warnings;
+}
+
 function im3ValidateBeforeManualSave() {
   const errors = [];
   const warnings = [];
@@ -2604,6 +2668,7 @@ function im3ValidateBeforeManualSave() {
   const payload = im3CollectEditablePayload();
   const rowSelect = document.getElementById("im3RowSelect");
   const isNew = !rowSelect || rowSelect.value === "__new__";
+  warnings.push(...im3DropdownManualWarnings(payload));
 
   if (!moduleMeta.id) errors.push("No active module selected.");
   if (moduleMeta.readOnly) errors.push("This module is read-only and cannot be saved manually.");
